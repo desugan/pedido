@@ -1,0 +1,192 @@
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { relatorioService, RelatorioResponse } from '../services/relatorioService';
+import { usuarioService, Usuario } from '../services/usuarioService';
+import { authService } from '../services/authService';
+
+const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
+
+const Relatorios: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const clienteParam = Number(searchParams.get('cliente') || 0);
+  const currentUser = authService.getCurrentUser();
+  const isAdmin = currentUser?.id_perfil === 1;
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [resultado, setResultado] = useState<RelatorioResponse | null>(null);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [idClienteSel, setIdClienteSel] = useState<number>(clienteParam || (currentUser?.id_cliente ?? 0));
+
+  useEffect(() => {
+    if (isAdmin) {
+      usuarioService.getAll().then((list) => {
+        setUsuarios(list);
+        if (clienteParam > 0) {
+          const exists = list.some((u) => u.id_cliente === clienteParam);
+          if (exists) {
+            setIdClienteSel(clienteParam);
+            return;
+          }
+        }
+
+        if (!idClienteSel && list.length > 0) {
+          setIdClienteSel(list[0].id_cliente);
+        }
+      }).catch(() => {});
+      return;
+    }
+
+    if (currentUser) {
+      setUsuarios([
+        {
+          id_usuario: currentUser.id_usuario,
+          id_cliente: currentUser.id_cliente,
+          id_perfil: currentUser.id_perfil,
+          usuario: currentUser.usuario,
+          senha: '',
+          cliente_nome: currentUser.cliente_nome || undefined,
+          perfil_nome: currentUser.perfil || undefined,
+        },
+      ]);
+      setIdClienteSel(currentUser.id_cliente);
+    }
+  }, [isAdmin, currentUser?.id_cliente, currentUser?.id_perfil, currentUser?.id_usuario, currentUser?.usuario, currentUser?.cliente_nome, currentUser?.perfil, idClienteSel, clienteParam]);
+
+  const gerar = async () => {
+    try {
+      setLoading(true);
+      setErro(null);
+
+      if (!idClienteSel) {
+        setErro('Selecione um usuário');
+        setLoading(false);
+        return;
+      }
+
+      setResultado(await relatorioService.getRelatorioUsuario(idClienteSel));
+    } catch (e) {
+      setErro('Erro ao gerar relatório');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // deduplicate by id_cliente for user selector
+  const uniqueClientes = Array.from(new Map(usuarios.filter(u => u.id_cliente).map(u => [u.id_cliente, u])).values());
+
+  const pedidosUsuario = resultado?.pedidos as any[] | undefined;
+  const pagamentosUsuario = resultado?.pagamentos as any[] | undefined;
+
+  useEffect(() => {
+    if (idClienteSel) {
+      void gerar();
+    }
+  }, [idClienteSel]);
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-4">Relatório de Usuário</h1>
+
+      <div className="bg-white rounded shadow p-4 mb-6 grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="border rounded p-2 bg-slate-50 text-sm font-semibold text-slate-700 md:col-span-1">
+          Tipo: Usuário
+        </div>
+
+        <select
+          className="border rounded p-2 md:col-span-3"
+          value={idClienteSel}
+          onChange={(e) => setIdClienteSel(Number(e.target.value))}
+          disabled={!isAdmin}
+        >
+          <option value={0}>Selecione o usuário</option>
+          {uniqueClientes.map((u) => (
+            <option key={u.id_cliente} value={u.id_cliente}>{u.usuario} — {u.cliente_nome || `Cliente #${u.id_cliente}`}</option>
+          ))}
+        </select>
+
+        <button className="bg-blue-600 text-white rounded p-2 md:col-span-4" onClick={gerar} disabled={loading}>
+          {loading ? 'Gerando...' : 'Gerar Relatório'}
+        </button>
+      </div>
+
+      {erro && <div className="text-red-600 mb-4">{erro}</div>}
+
+      {resultado && (
+        <div className="space-y-6">
+          {resultado.cliente && (
+            <div className="bg-white rounded-2xl shadow p-5 border border-slate-100">
+              <h2 className="text-xl font-bold mb-1">{resultado.cliente.nome}</h2>
+              <span className="text-sm text-slate-500">Cliente #{resultado.cliente.id_cliente} · Status: {resultado.cliente.status?.toUpperCase()}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {Object.entries(resultado.totais).map(([chave, valor]) => (
+              <div key={chave} className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+                <div className="text-xs text-slate-500 uppercase tracking-wide">{chave.replace(/_/g, ' ')}</div>
+                <div className="text-xl font-bold mt-1">{typeof valor === 'number' && chave.toLowerCase().includes('valor') ? fmtBRL(valor) : valor}</div>
+              </div>
+            ))}
+          </div>
+
+          {pedidosUsuario && pedidosUsuario.length > 0 && (
+            <div className="bg-white rounded-2xl shadow border border-slate-100 overflow-x-auto">
+              <div className="px-5 py-3 border-b font-semibold text-slate-700">Pedidos ({pedidosUsuario.length})</div>
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left">ID</th>
+                    <th className="px-4 py-2 text-left">Data</th>
+                    <th className="px-4 py-2 text-left">Status</th>
+                    <th className="px-4 py-2 text-right">Total</th>
+                    <th className="px-4 py-2 text-left">Itens</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedidosUsuario.map((p: any) => (
+                    <tr key={p.id_pedido} className="border-t">
+                      <td className="px-4 py-2">#{p.id_pedido}</td>
+                      <td className="px-4 py-2">{p.data ? fmtDate(p.data) : '—'}</td>
+                      <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
+                      <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.total)}</td>
+                      <td className="px-4 py-2 text-slate-500">{Array.isArray(p.pedido_item) ? p.pedido_item.length : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {pagamentosUsuario && pagamentosUsuario.length > 0 && (
+            <div className="bg-white rounded-2xl shadow border border-slate-100 overflow-x-auto">
+              <div className="px-5 py-3 border-b font-semibold text-slate-700">Pagamentos ({pagamentosUsuario.length})</div>
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left">ID</th>
+                    <th className="px-4 py-2 text-left">Data</th>
+                    <th className="px-4 py-2 text-left">Status</th>
+                    <th className="px-4 py-2 text-right">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagamentosUsuario.map((p: any) => (
+                    <tr key={p.id_pagamento} className="border-t">
+                      <td className="px-4 py-2">#{p.id_pagamento}</td>
+                      <td className="px-4 py-2">{p.data_criacao ? fmtDate(p.data_criacao) : '—'}</td>
+                      <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
+                      <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Relatorios;
