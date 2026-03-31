@@ -7,19 +7,88 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model app_config {
+  id_config    Int      @id @default(autoincrement())
+  config_key   String   @unique(map: "uq_app_config_key") @db.VarChar(80)
+  config_value String?  @db.Text
+  updated_at   DateTime @default(now()) @updatedAt @db.DateTime(0)
+}
+
 model cliente {
-  id_cliente Int         @id @default(autoincrement())
-  nome       String      @db.VarChar(150)
-  status     String      @db.VarChar(50)
+  id_cliente Int          @id @default(autoincrement())
+  nome       String       @db.VarChar(150)
+  status     String       @db.VarChar(50)
+  contato    String?      @db.VarChar(45)
+  financeiro financeiro[]
   pagamento  pagamento[]
   pedido     pedido[]
+  usuario    usuario[]
+}
+
+model financeiro {
+  id_financeiro     Int      @id @default(autoincrement())
+  limite_credito    Float
+  saldo_utilizado   Float
+  ultimo_limite     Float
+  data_criacao      DateTime @db.DateTime(0)
+  usuario_alteracao String   @db.VarChar(255)
+  id_cliente        Int      @unique
+  cliente           cliente  @relation(fields: [id_cliente], references: [id_cliente], onDelete: NoAction, onUpdate: NoAction, map: "fk_financeiro_cliente1")
+
+  @@index([id_cliente], map: "fk_financeiro_cliente1_idx")
+}
+
+model fornecedor {
+  id_fornecedor Int          @id @default(autoincrement())
+  razao         String       @db.VarChar(255)
+  cnpj          String?      @db.VarChar(45)
+  status        String       @default("ATIVO") @db.VarChar(50)
+  data          DateTime?    @db.DateTime(0)
+  id_usuario    Int?
+  usuario       usuario?     @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction, map: "fk_fornecedor_usuario1")
+  lancamento    lancamento[]
+
+  @@index([id_usuario], map: "fk_fornecedor_usuario1_idx")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model lancamento {
+  id_lancamento    Int                @id @default(autoincrement())
+  id_fornecedor    Int
+  data             DateTime           @db.DateTime(0)
+  total            Float
+  documento        String             @db.VarChar(45)
+  chave            String?            @db.VarChar(45)
+  id_usuario       Int
+  data_lancamento  DateTime           @db.DateTime(0)
+  status           String             @default("PENDENTE") @db.VarChar(50)
+  itens_lancamento itens_lancamento[]
+  fornecedor       fornecedor         @relation(fields: [id_fornecedor], references: [id_fornecedor], onDelete: NoAction, onUpdate: NoAction, map: "fk_lancamento_fornecedor1")
+  usuario          usuario            @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction, map: "fk_lancamento_usuario1")
+  lancamento_item  lancamento_item[]
+
+  @@index([id_fornecedor], map: "fk_lancamento_fornecedor1_idx")
+  @@index([id_usuario], map: "fk_lancamento_usuario1_idx")
+}
+
+model itens_lancamento {
+  id_itens_lancamento Int        @id @default(autoincrement())
+  id_lancamento       Int
+  id_produto          Int
+  quantidade          Float
+  vlr_unit            Float
+  lancamento          lancamento @relation(fields: [id_lancamento], references: [id_lancamento], onDelete: NoAction, onUpdate: NoAction, map: "fk_itens_lancamento_lancamento1")
+  produto             produto    @relation(fields: [id_produto], references: [id_produto], onDelete: NoAction, onUpdate: NoAction, map: "fk_itens_lancamento_produto1")
+
+  @@index([id_lancamento], map: "fk_itens_lancamento_lancamento1_idx")
+  @@index([id_produto], map: "fk_itens_lancamento_produto1_idx")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model pagamento {
   id_pagamento    Int               @id @default(autoincrement())
   valor           Float
-  qrcode          String            @db.Text(0)
+  qrcode          String            @db.Text
   chavepix        String            @db.VarChar(255)
   status          String            @db.VarChar(50)
   data_criacao    DateTime          @db.DateTime(0)
@@ -64,6 +133,8 @@ model pedido_item {
   qtd            Float
   vlr_item       Float
   vlr_total      Float
+  vlr_custo      Float   @default(0) @db.Float
+  saldo_item     Float?  @db.Float
   pedido         pedido  @relation(fields: [id_pedido], references: [id_pedido], onDelete: NoAction, onUpdate: NoAction, map: "fk_pedidoItem_pedido")
   produto        produto @relation(fields: [id_produto], references: [id_produto], onDelete: NoAction, onUpdate: NoAction, map: "fk_pedidoItem_produto1")
 
@@ -73,29 +144,50 @@ model pedido_item {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model perfil {
-  id_perfil Int    @id @default(autoincrement())
-  perfil    String @db.VarChar(50)
+  id_perfil Int       @id @default(autoincrement())
+  perfil    String    @db.VarChar(50)
+  usuario   usuario[]
 }
 
 model produto {
-  id_produto        Int           @id @default(autoincrement())
-  nome              String        @db.VarChar(255)
+  id_produto        Int                @id @default(autoincrement())
+  nome              String             @db.VarChar(255)
   valor             Float
   oldvalor          Float?
-  marca             String        @db.VarChar(255)
+  marca             String             @db.VarChar(255)
   saldo             Float
-  data_compra       DateTime?     @db.DateTime(0)
+  data_compra       DateTime?          @db.DateTime(0)
   qtd_ultima_compra Float?
+  itens_lancamento  itens_lancamento[]
+  lancamento_item   lancamento_item[]
   pedido_item       pedido_item[]
 }
 
 model usuario {
-  id_usuario Int    @id @default(autoincrement())
+  id_usuario Int          @id @default(autoincrement())
   id_cliente Int
   id_perfil  Int
-  usuario    String @db.VarChar(255)
-  senha      String @db.VarChar(255)
+  usuario    String       @db.VarChar(255)
+  senha      String       @db.VarChar(255)
+  fornecedor fornecedor[]
+  lancamento lancamento[]
+  cliente    cliente      @relation(fields: [id_cliente], references: [id_cliente], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario_cliente1")
+  perfil     perfil       @relation(fields: [id_perfil], references: [id_perfil], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario_perfil1")
 
   @@index([id_cliente], map: "fk_usuario_cliente1_idx")
   @@index([id_perfil], map: "fk_usuario_perfil1_idx")
+}
+
+model lancamento_item {
+  id_item_lancamento Int        @id @default(autoincrement())
+  id_lancamento      Int
+  id_produto         Int
+  qtd                Float      @db.Float
+  vlr_item           Float      @db.Float
+  vlr_total          Float      @db.Float
+  lancamento         lancamento @relation(fields: [id_lancamento], references: [id_lancamento], onDelete: Cascade, map: "fk_lancamento_item_lancamento")
+  produto            produto    @relation(fields: [id_produto], references: [id_produto], map: "fk_lancamento_item_produto")
+
+  @@index([id_lancamento], map: "idx_lancamento_item_lancamento")
+  @@index([id_produto], map: "idx_lancamento_item_produto")
 }

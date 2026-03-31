@@ -1,5 +1,5 @@
 import { ClienteRepository } from '../repositories/ClienteRepository';
-import { Cliente } from '../types/cliente';
+import { Cliente, CreateClienteInput, UpdateClienteInput } from '../types/cliente';
 
 export class ClienteService {
   private repository = new ClienteRepository();
@@ -21,7 +21,7 @@ export class ClienteService {
     return cliente;
   }
 
-  async createCliente(data: Omit<Cliente, 'id_cliente'>): Promise<Cliente> {
+  async createCliente(data: CreateClienteInput): Promise<Cliente> {
     if (!data.nome) {
       throw new Error('Nome é obrigatório');
     }
@@ -30,10 +30,18 @@ export class ClienteService {
       data.status = 'ativo'; // default
     }
 
+    if (typeof data.limite_credito !== 'undefined') {
+      const limite = Number(data.limite_credito);
+      if (Number.isNaN(limite) || limite < 0) {
+        throw new Error('Limite de crédito inválido');
+      }
+      data.limite_credito = limite;
+    }
+
     return this.repository.create(data);
   }
 
-  async updateCliente(id: number, data: Partial<Omit<Cliente, 'id_cliente'>>): Promise<Cliente> {
+  async updateCliente(id: number, data: UpdateClienteInput): Promise<Cliente> {
     if (!id || id <= 0) {
       throw new Error('ID do cliente inválido');
     }
@@ -54,6 +62,14 @@ export class ClienteService {
       if (statusSolicitado === 'INATIVO' && pedidosPendentes > 0) {
         data.status = 'INADIMPLENTE';
       }
+    }
+
+    if (typeof data.limite_credito !== 'undefined') {
+      const limite = Number(data.limite_credito);
+      if (Number.isNaN(limite) || limite < 0) {
+        throw new Error('Limite de crédito inválido');
+      }
+      data.limite_credito = limite;
     }
 
     return this.repository.update(id, data);

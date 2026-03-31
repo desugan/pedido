@@ -23,7 +23,7 @@ export interface ItemPedido {
 export interface Pedido {
   id: number;
   clienteId: number;
-  status: 'pendente' | 'confirmado' | 'pronto' | 'entregue' | 'cancelado';
+  status:  'confirmado' | 'pago' | 'cancelado';
   total: number;
   itens?: ItemPedido[];
   createdAt: string;

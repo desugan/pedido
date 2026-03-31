@@ -8,6 +8,38 @@ import {
 const prisma = new PrismaClient();
 
 export class PagamentoRepository {
+  private async ensureFinanceiro(tx: any, clienteId: number): Promise<void> {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO financeiro (id_cliente, limite_credito, saldo_utilizado, ultimo_limite, data_criacao, usuario_alteracao)
+       VALUES (?, 0, 0, 0, NOW(), 'SISTEMA')
+       ON DUPLICATE KEY UPDATE id_cliente = VALUES(id_cliente)`,
+      clienteId
+    );
+  }
+
+  private async subtractSaldoUtilizado(tx: any, clienteId: number, amount: number): Promise<void> {
+    await this.ensureFinanceiro(tx, clienteId);
+
+    const financeiroRows = await tx.$queryRawUnsafe(
+      'SELECT saldo_utilizado FROM financeiro WHERE id_cliente = ? LIMIT 1',
+      clienteId
+    ) as Array<{ saldo_utilizado: number }>;
+    const financeiro = financeiroRows[0];
+    if (!financeiro) {
+      return;
+    }
+
+    const atual = Number(financeiro.saldo_utilizado || 0);
+    const novoSaldo = Math.max(atual - Number(amount || 0), 0);
+
+    await tx.$executeRawUnsafe(
+      'UPDATE financeiro SET saldo_utilizado = ?, usuario_alteracao = ? WHERE id_cliente = ?',
+      novoSaldo,
+      'SISTEMA',
+      clienteId
+    );
+  }
+
   async findAll(status?: string): Promise<Pagamento[]> {
     const where = status ? { status } : {};
 
@@ -139,13 +171,47 @@ export class PagamentoRepository {
       updateData.data_pagamento = new Date();
     }
 
-    const pagamentoAtualizado = await prisma.pagamento.update({
-      where: { id_pagamento: id },
-      data: updateData,
-      include: {
-        cliente: true,
-        pagamentopedido: true,
-      },
+    const pagamentoAtualizado = await prisma.$transaction(async (tx) => {
+      const updated = await tx.pagamento.update({
+        where: { id_pagamento: id },
+        data: updateData,
+        include: {
+          cliente: true,
+          pagamentopedido: true,
+        },
+      });
+
+      if (data.status === 'aprovado') {
+        const pedidoIds = updated.pagamentopedido.map((pp) => pp.id_pedido);
+        if (pedidoIds.length) {
+          const pedidosAtuais = await tx.pedido.findMany({
+            where: { id_pedido: { in: pedidoIds } },
+            select: { id_pedido: true, id_cliente: true, total: true, status: true },
+          });
+
+          await tx.pedido.updateMany({
+            where: { id_pedido: { in: pedidoIds } },
+            data: { status: 'pago' },
+          });
+
+          const consumoPorCliente = pedidosAtuais.reduce((acc, pedido) => {
+            const statusAtual = String(pedido.status || '').toLowerCase();
+            if (statusAtual === 'pago' || statusAtual === 'cancelado') {
+              return acc;
+            }
+
+            const clienteId = Number(pedido.id_cliente);
+            acc[clienteId] = (acc[clienteId] || 0) + Number(pedido.total || 0);
+            return acc;
+          }, {} as Record<number, number>);
+
+          for (const [clienteIdStr, valor] of Object.entries(consumoPorCliente)) {
+            await this.subtractSaldoUtilizado(tx, Number(clienteIdStr), Number(valor || 0));
+          }
+        }
+      }
+
+      return updated;
     });
 
     return {

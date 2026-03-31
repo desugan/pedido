@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { clienteService, CreateClienteData } from '../services/clienteService';
 import { Cliente } from '../types';
 
+const fmtBRL = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 const Clientes: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -15,7 +17,29 @@ const Clientes: React.FC = () => {
   const [formData, setFormData] = useState<CreateClienteData>({
     nome: '',
     status: 'ATIVO',
+    limite_credito: 0,
   });
+
+  const getLimiteCredito = (cliente: Cliente): number => {
+    const financeiro = (cliente as any).financeiro;
+    if (Array.isArray(financeiro)) {
+      return Number(financeiro[0]?.limite_credito ?? cliente.limite_credito ?? 0);
+    }
+    return Number(financeiro?.limite_credito ?? cliente.limite_credito ?? 0);
+  };
+
+  const getSaldoRestante = (cliente: Cliente): number => {
+    const financeiro = (cliente as any).financeiro;
+    if (Array.isArray(financeiro)) {
+      const item = financeiro[0];
+      const limite = Number(item?.limite_credito ?? cliente.limite_credito ?? 0);
+      const usado = Number(item?.saldo_utilizado ?? cliente.credito_utilizado ?? 0);
+      return limite - usado;
+    }
+    const limite = Number(financeiro?.limite_credito ?? cliente.limite_credito ?? 0);
+    const usado = Number(financeiro?.saldo_utilizado ?? cliente.credito_utilizado ?? 0);
+    return limite - usado;
+  };
   const query = (searchParams.get('q') || '').trim().toLowerCase();
   const filteredClientes = clientes.filter((cliente) => {
     if (!query) return true;
@@ -23,6 +47,8 @@ const Clientes: React.FC = () => {
       String(cliente.id_cliente),
       cliente.nome,
       cliente.status,
+      String(getLimiteCredito(cliente)),
+      String(getSaldoRestante(cliente)),
       String(cliente.pedido?.length || 0),
     ].some((value) => value.toLowerCase().includes(query));
   });
@@ -83,14 +109,13 @@ const Clientes: React.FC = () => {
     setFormData({
       nome: cliente.nome,
       status: normalizeStatus(cliente.status),
+      limite_credito: getLimiteCredito(cliente),
     });
     setShowForm(true);
   };
 
-
-
   const resetForm = () => {
-    setFormData({ nome: '', status: 'ATIVO' });
+    setFormData({ nome: '', status: 'ATIVO', limite_credito: 0 });
     setEditingCliente(null);
     setShowForm(false);
   };
@@ -127,7 +152,7 @@ const Clientes: React.FC = () => {
             {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
           </h2>
           <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Nome
@@ -153,6 +178,20 @@ const Clientes: React.FC = () => {
                   <option value="INATIVO">Inativo</option>
                   <option value="INADIMPLENTE">Inadimplente</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Limite de crédito
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={formData.limite_credito ?? 0}
+                  onChange={(e) => setFormData({ ...formData, limite_credito: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
               </div>
             </div>
             <div className="flex gap-2 mt-6">
@@ -188,6 +227,12 @@ const Clientes: React.FC = () => {
                 Status
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Limite
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Saldo restante
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Pedidos
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -221,6 +266,14 @@ const Clientes: React.FC = () => {
                   </span>
                     );
                   })()}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {fmtBRL(getLimiteCredito(cliente))}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <span className={getSaldoRestante(cliente) < 0 ? 'text-red-600' : 'text-emerald-700'}>
+                    {fmtBRL(getSaldoRestante(cliente))}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <button

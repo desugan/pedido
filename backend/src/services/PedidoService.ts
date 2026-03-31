@@ -1,4 +1,5 @@
 import { PedidoRepository } from '../repositories/PedidoRepository';
+import { ClienteRepository } from '../repositories/ClienteRepository';
 import {
   Pedido,
   CreatePedidoInput,
@@ -6,10 +7,30 @@ import {
   CreateItemPedidoInput,
 } from '../types/pedido';
 
-const allowedStatus = ['pendente', 'confirmado', 'pronto', 'entregue', 'cancelado'];
+const allowedStatus = ['confirmado', 'pago', 'cancelado'];
 
 export class PedidoService {
   private repository = new PedidoRepository();
+  private clienteRepository = new ClienteRepository();
+
+  private calculatePedidoTotal(itens: CreateItemPedidoInput[]): number {
+    return itens.reduce((acc, item) => acc + item.quantidade * item.precoUnitario, 0);
+  }
+
+  private calculateSaldoRestante(cliente: any): number {
+    const financeiroRaw = cliente?.financeiro;
+    const financeiro = Array.isArray(financeiroRaw)
+      ? financeiroRaw[0] || null
+      : financeiroRaw;
+    if (!financeiro) {
+      return 0;
+    }
+
+    const limiteCredito = Number(financeiro.limite_credito ?? 0);
+    const saldoUtilizado = Number(financeiro.saldo_utilizado ?? 0);
+
+    return limiteCredito - saldoUtilizado;
+  }
 
   async createPedido(data: CreatePedidoInput): Promise<Pedido> {
     if (!data.clienteId || data.clienteId <= 0) {
@@ -18,6 +39,20 @@ export class PedidoService {
 
     if (!data.itens || data.itens.length === 0) {
       throw new Error('Pedido deve ter pelo menos um item');
+    }
+
+    const cliente = await this.clienteRepository.findById(data.clienteId);
+    if (!cliente) {
+      throw new Error('Cliente não encontrado');
+    }
+
+    const totalPedido = this.calculatePedidoTotal(data.itens);
+    const saldoRestante = this.calculateSaldoRestante(cliente);
+
+    if (saldoRestante < totalPedido) {
+      throw new Error(
+        `Saldo restante insuficiente para este pedido. Disponível: R$ ${saldoRestante.toFixed(2)} | Pedido: R$ ${totalPedido.toFixed(2)}`
+      );
     }
 
     return this.repository.create(data);

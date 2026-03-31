@@ -68,4 +68,46 @@ export async function ensureParityTables(): Promise<void> {
       UNIQUE KEY uq_app_config_key (config_key)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS financeiro (
+      id_financeiro INT NOT NULL AUTO_INCREMENT,
+      id_cliente INT NOT NULL,
+      limite_credito FLOAT NOT NULL DEFAULT 0,
+      saldo_utilizado FLOAT NOT NULL DEFAULT 0,
+      ultimo_limite FLOAT NOT NULL DEFAULT 0,
+      data_criacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      usuario_alteracao VARCHAR(255) NOT NULL,
+      PRIMARY KEY (id_financeiro),
+      UNIQUE KEY uq_financeiro_cliente (id_cliente),
+      CONSTRAINT fk_financeiro_cliente
+        FOREIGN KEY (id_cliente)
+        REFERENCES cliente(id_cliente)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  const clienteCreditoColumns = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(`
+    SELECT COUNT(*) AS total
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'cliente'
+      AND COLUMN_NAME = 'limite_credito'
+  `);
+
+  if (Number(clienteCreditoColumns[0]?.total || 0) > 0) {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE cliente
+      DROP COLUMN limite_credito
+    `);
+  }
+
+  // Initialize financeiro records for clients without one
+  await prisma.$executeRawUnsafe(`
+    INSERT IGNORE INTO financeiro (id_cliente, limite_credito, saldo_utilizado, ultimo_limite, data_criacao, usuario_alteracao)
+    SELECT DISTINCT id_cliente, 0, 0, 0, NOW(), 'BOOTSTRAP'
+    FROM cliente
+    WHERE id_cliente NOT IN (SELECT DISTINCT id_cliente FROM financeiro)
+  `);
 }

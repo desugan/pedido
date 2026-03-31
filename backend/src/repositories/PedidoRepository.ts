@@ -10,6 +10,46 @@ import {
 const prisma = new PrismaClient();
 
 export class PedidoRepository {
+  private async ensureFinanceiro(tx: any, clienteId: number): Promise<void> {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO financeiro (id_cliente, limite_credito, saldo_utilizado, ultimo_limite, data_criacao, usuario_alteracao)
+       VALUES (?, 0, 0, 0, NOW(), 'SISTEMA')
+       ON DUPLICATE KEY UPDATE id_cliente = VALUES(id_cliente)`,
+      clienteId
+    );
+  }
+
+  private async adjustSaldoUtilizado(
+    tx: any,
+    clienteId: number,
+    amount: number,
+    operation: 'add' | 'subtract'
+  ): Promise<void> {
+    await this.ensureFinanceiro(tx, clienteId);
+
+    const financeiroRows = await tx.$queryRawUnsafe(
+      'SELECT saldo_utilizado FROM financeiro WHERE id_cliente = ? LIMIT 1',
+      clienteId
+    ) as Array<{ saldo_utilizado: number }>;
+    const financeiro = financeiroRows[0];
+    if (!financeiro) {
+      return;
+    }
+
+    const atual = Number(financeiro.saldo_utilizado || 0);
+    const valor = Number(amount || 0);
+    const novoSaldo = operation === 'add'
+      ? atual + valor
+      : Math.max(atual - valor, 0);
+
+    await tx.$executeRawUnsafe(
+      'UPDATE financeiro SET saldo_utilizado = ?, usuario_alteracao = ? WHERE id_cliente = ?',
+      novoSaldo,
+      'SISTEMA',
+      clienteId
+    );
+  }
+
   async findAll(status?: string): Promise<Pedido[]> {
     const where = status ? { status } : {};
 
@@ -93,21 +133,20 @@ export class PedidoRepository {
   async create(data: CreatePedidoInput): Promise<Pedido> {
     const total = data.itens.reduce((acc, item) => acc + item.quantidade * item.precoUnitario, 0);
 
-    const pedido = await prisma.pedido.create({
-      data: {
-        id_cliente: data.clienteId,
-        total,
-        data: new Date(),
-        status: 'pendente',
-      },
-    });
+    const pedido = await prisma.$transaction(async (tx) => {
+      const created = await tx.pedido.create({
+        data: {
+          id_cliente: data.clienteId,
+          total,
+          data: new Date(),
+          status: 'pendente',
+        },
+      });
 
-    // inserir itens de pedido
-    await Promise.all(
-      data.itens.map(async (item) => {
-        let produto = await prisma.produto.findFirst({ where: { nome: item.produtoNome } });
+      for (const item of data.itens) {
+        let produto = await tx.produto.findFirst({ where: { nome: item.produtoNome } });
         if (!produto) {
-          produto = await prisma.produto.create({
+          produto = await tx.produto.create({
             data: {
               nome: item.produtoNome,
               valor: item.precoUnitario,
@@ -117,17 +156,22 @@ export class PedidoRepository {
           });
         }
 
-        await prisma.pedido_item.create({
+        await tx.pedido_item.create({
           data: {
-            id_pedido: pedido.id_pedido,
+            id_pedido: created.id_pedido,
             id_produto: produto.id_produto,
             qtd: item.quantidade,
             vlr_item: item.precoUnitario,
             vlr_total: item.quantidade * item.precoUnitario,
           },
         });
-      })
-    );
+      }
+
+      // Reserve credit as soon as the order is created.
+      await this.adjustSaldoUtilizado(tx, data.clienteId, total, 'add');
+
+      return created;
+    });
 
     return this.findById(pedido.id_pedido) as Promise<Pedido>;
   }
@@ -136,10 +180,38 @@ export class PedidoRepository {
     const pedidoAtual = await prisma.pedido.findUnique({ where: { id_pedido: id } });
     if (!pedidoAtual) return null;
 
-    const pedidoAtualizado = await prisma.pedido.update({
-      where: { id_pedido: id },
-      data: { ...data },
-      include: { pedido_item: true },
+    const pedidoAtualizado = await prisma.$transaction(async (tx) => {
+      const updated = await tx.pedido.update({
+        where: { id_pedido: id },
+        data: { ...data },
+        include: { pedido_item: true },
+      });
+
+      const oldStatus = String(pedidoAtual.status || '').toLowerCase();
+      const newStatus = String(updated.status || '').toLowerCase();
+
+      const oldFinalized = oldStatus === 'cancelado' || oldStatus === 'pago';
+      const newFinalized = newStatus === 'cancelado' || newStatus === 'pago';
+
+      if (!oldFinalized && newFinalized) {
+        await this.adjustSaldoUtilizado(
+          tx,
+          updated.id_cliente,
+          Number(updated.total || 0),
+          'subtract'
+        );
+      }
+
+      if (oldFinalized && !newFinalized) {
+        await this.adjustSaldoUtilizado(
+          tx,
+          updated.id_cliente,
+          Number(updated.total || 0),
+          'add'
+        );
+      }
+
+      return updated;
     });
 
     return {

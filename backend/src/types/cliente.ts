@@ -4,16 +4,29 @@ export interface Cliente {
   status: string;
   pagamento?: any[]; // relation
   pedido?: any[]; // relation
+  financeiro?: Financeiro;
+}
+
+export interface Financeiro {
+  id_financeiro: number;
+  id_cliente: number;
+  limite_credito: number;
+  saldo_utilizado: number;
+  ultimo_limite: number;
+  data_criacao: Date;
+  usuario_alteracao: string;
 }
 
 export interface CreateClienteInput {
   nome: string;
   status: string;
+  limite_credito?: number;
 }
 
 export interface UpdateClienteInput {
   nome?: string;
   status?: string;
+  limite_credito?: number;
 }
 
 export interface ClienteRepository {

@@ -65,7 +65,7 @@ function AppContent(): React.ReactElement {
     let active = true;
 
     const loadHealth = async () => {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://192.168.1.49:3000';
+      const baseURL = import.meta.env.VITE_API_URL || 'http://192.168.0.18:3000';
 
       try {
         const response = await fetch(`${baseURL}/health`);

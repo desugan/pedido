@@ -11,7 +11,15 @@ export class PedidoController {
     } catch (error) {
       console.error('Erro ao criar pedido:', error);
       const message = error instanceof Error ? error.message : 'Erro interno do servidor';
-      res.status(message.includes('inválido') || message.includes('deve') ? 400 : 500).json({ error: message });
+      res.status(
+        message.includes('inválido')
+        || message.includes('deve')
+        || message.includes('Saldo restante')
+        || message.includes('insuficiente')
+        || message.includes('não encontrado')
+          ? 400
+          : 500
+      ).json({ error: message });
     }
   }
 

@@ -9,6 +9,8 @@ type Totais = {
   statusCount: Record<string, number>;
 };
 
+const normalizeStatus = (status?: string | null): string => String(status || '').trim().toLowerCase();
+
 function calcularTotais<T extends { status?: string | null }>(dados: T[], valorFn: (item: T) => number): Totais {
   const quantidade = dados.length;
   const valorTotal = dados.reduce((acc, item) => acc + valorFn(item), 0);
@@ -24,6 +26,13 @@ function calcularTotais<T extends { status?: string | null }>(dados: T[], valorF
 }
 
 export class RelatorioService {
+  private getFinanceiro(cliente: any): any {
+    const financeiroRaw = cliente?.financeiro;
+    return Array.isArray(financeiroRaw)
+      ? financeiroRaw[0] || null
+      : financeiroRaw || null;
+  }
+
   async gerarRelatorioPedidos(dataInicio?: string, dataFim?: string, status?: string) {
     const where: any = {};
 
@@ -84,15 +93,32 @@ export class RelatorioService {
       where.status = status;
     }
 
-    const dados = await prisma.cliente.findMany({
+    const clientes = await prisma.cliente.findMany({
       where,
       orderBy: { id_cliente: 'desc' },
-      include: { pedido: true, pagamento: true },
+      include: { pedido: true, pagamento: true, financeiro: true },
+    });
+
+    const dados = clientes.map((cliente) => {
+      const financeiro = this.getFinanceiro(cliente as any);
+      const limiteCredito = Number(financeiro?.limite_credito ?? 0);
+      const saldoUtilizado = Number(financeiro?.saldo_utilizado ?? 0);
+      const saldoRestante = limiteCredito - saldoUtilizado;
+
+      return {
+        ...cliente,
+        limite_credito: limiteCredito,
+        saldo_restante: saldoRestante,
+        credito_utilizado: saldoUtilizado,
+      };
     });
 
     const quantidade = dados.length;
     const totalPedidos = dados.reduce((acc, c) => acc + c.pedido.length, 0);
     const totalPagamentos = dados.reduce((acc, c) => acc + c.pagamento.length, 0);
+    const limiteCreditoTotal = dados.reduce((acc, c) => acc + Number(c.limite_credito || 0), 0);
+    const saldoRestanteTotal = dados.reduce((acc, c) => acc + Number(c.saldo_restante || 0), 0);
+    const creditoUtilizadoTotal = dados.reduce((acc, c) => acc + Number(c.credito_utilizado || 0), 0);
 
     return {
       tipo: 'clientes',
@@ -100,6 +126,9 @@ export class RelatorioService {
         quantidade,
         totalPedidos,
         totalPagamentos,
+        limiteCreditoTotal,
+        saldoRestanteTotal,
+        creditoUtilizadoTotal,
       },
       dados,
     };
@@ -136,7 +165,10 @@ export class RelatorioService {
   }
 
   async gerarRelatorioUsuario(id_cliente: number) {
-    const cliente = await prisma.cliente.findUnique({ where: { id_cliente } });
+    const cliente = await prisma.cliente.findUnique({ 
+      where: { id_cliente },
+      include: { financeiro: true },
+    });
 
     const pedidos = await prisma.pedido.findMany({
       where: { id_cliente },
@@ -154,6 +186,11 @@ export class RelatorioService {
     const valorTotalPedidos = pedidos.reduce((acc, p) => acc + p.total, 0);
     const totalPagamentos = pagamentos.length;
     const valorTotalPagamentos = pagamentos.reduce((acc, p) => acc + p.valor, 0);
+    
+    const financeiro = this.getFinanceiro(cliente as any);
+    const limiteCredito = Number(financeiro?.limite_credito ?? 0);
+    const saldoUtilizado = Number(financeiro?.saldo_utilizado ?? 0);
+    const saldoRestante = limiteCredito - saldoUtilizado;
 
     const statusPedidos = pedidos.reduce((acc, p) => {
       const key = p.status || 'sem_status';
@@ -163,12 +200,22 @@ export class RelatorioService {
 
     return {
       tipo: 'usuario',
-      cliente,
+      cliente: cliente
+        ? {
+          ...cliente,
+          limite_credito: limiteCredito,
+          saldo_restante: saldoRestante,
+          credito_utilizado: saldoUtilizado,
+        }
+        : null,
       totais: {
         totalPedidos,
         valorTotalPedidos,
         totalPagamentos,
         valorTotalPagamentos,
+        limiteCredito,
+        saldoRestante,
+        creditoUtilizado: saldoUtilizado,
         ...statusPedidos,
       },
       pedidos,

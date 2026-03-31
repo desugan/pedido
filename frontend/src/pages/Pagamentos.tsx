@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
-import { pagamentoService, Pagamento, CreatePagamentoData } from '../services/pagamentoService';
+import { pagamentoService, Pagamento } from '../services/pagamentoService';
 import { authService } from '../services/authService';
 import { pedidoService, Pedido } from '../services/pedidoService';
 import { configService } from '../services/configService';
@@ -19,7 +19,10 @@ const Pagamentos: React.FC = () => {
   const [selectedPedidoIds, setSelectedPedidoIds] = useState<number[]>([]);
   const [pixKey, setPixKey] = useState('');
   const [pixKeyInput, setPixKeyInput] = useState('');
+  const [pixNome, setPixNome] = useState('');
+  const [pixNomeInput, setPixNomeInput] = useState('');
   const [savingPixKey, setSavingPixKey] = useState(false);
+  const [savingPixNome, setSavingPixNome] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
   const [pixCopiaCola, setPixCopiaCola] = useState('');
   const normalizeStatus = (status: string | undefined): 'pendente' | 'aprovado' | 'rejeitado' | 'cancelado' | '' => {
@@ -27,8 +30,7 @@ const Pagamentos: React.FC = () => {
 
     if (value === 'aberto' || value === 'pendente' || value === 'aguardando' || value === 'em_aberto' || value === 'em aberto' || value === 'processando pagamento') return 'pendente';
     if (value === 'confirmado' || value === 'aprovado' || value === 'pago' || value === 'liquidado') return 'aprovado';
-    if (value === 'rejeitado') return 'rejeitado';
-    if (value === 'cancelado') return 'cancelado';
+    if (value === 'excluido' || value === 'excluído') return 'excluido';
 
     return '';
   };
@@ -37,8 +39,7 @@ const Pagamentos: React.FC = () => {
 
     if (normalizedStatus === 'pendente') return 'aberto';
     if (normalizedStatus === 'aprovado') return 'confirmado';
-    if (normalizedStatus === 'rejeitado') return 'rejeitado';
-    if (normalizedStatus === 'cancelado') return 'cancelado';
+    if (normalizedStatus === 'excluido') return 'excluído';
 
     return status || '';
   };
@@ -59,13 +60,6 @@ const Pagamentos: React.FC = () => {
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const pagedPagamentos = filteredPagamentos.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
-  const [newPagamento, setNewPagamento] = useState<CreatePagamentoData>({
-    valor: 0,
-    qrcode: 'auto',
-    chavepix: 'auto',
-    id_cliente: user?.id_cliente ?? 0,
-  });
-
   const selectedPedidos = pedidosConfirmados.filter((pedido) => selectedPedidoIds.includes(pedido.id));
   const selectedPedidosTotal = selectedPedidos.reduce((acc, pedido) => acc + pedido.total, 0);
 
@@ -74,10 +68,8 @@ const Pagamentos: React.FC = () => {
   }, [statusFilter]);
 
   useEffect(() => {
-    if (!isAdmin) {
-      void loadPedidosConfirmados();
-    }
-  }, [isAdmin]);
+    void loadPedidosConfirmados();
+  }, []);
 
   useEffect(() => {
     void loadPixKey();
@@ -105,9 +97,14 @@ const Pagamentos: React.FC = () => {
 
   const loadPixKey = async () => {
     try {
-      const key = await configService.getPixKey();
+      const [key, nome] = await Promise.all([
+        configService.getPixKey(),
+        configService.getPixNome(),
+      ]);
       setPixKey(key);
       setPixKeyInput(key);
+      setPixNome(nome);
+      setPixNomeInput(nome);
     } catch (err) {
       console.error(err);
     }
@@ -150,7 +147,7 @@ const Pagamentos: React.FC = () => {
 
     const pixKeyValue = key.trim();
     const amountValue = Number(amount).toFixed(2);
-    const merchantName = normalizeText('Buteco TI', 25);
+    const merchantName = normalizeText(pixNome || 'Loja', 25);
     const merchantCity = normalizeText('Londrina', 15);
     const txid = '***';
 
@@ -242,6 +239,26 @@ const Pagamentos: React.FC = () => {
     }
   };
 
+  const handleSavePixNome = async () => {
+    const nome = pixNomeInput.trim();
+    if (!nome) {
+      setError('Nome PIX é obrigatório');
+      return;
+    }
+
+    try {
+      setSavingPixNome(true);
+      const saved = await configService.setPixNome(nome);
+      setPixNome(saved);
+      setError(null);
+    } catch (err) {
+      setError('Erro ao salvar nome PIX');
+      console.error(err);
+    } finally {
+      setSavingPixNome(false);
+    }
+  };
+
   const togglePedidoSelection = (pedidoId: number) => {
     setSelectedPedidoIds((prev) => (
       prev.includes(pedidoId)
@@ -258,7 +275,7 @@ const Pagamentos: React.FC = () => {
   };
 
   useEffect(() => {
-    const value = isAdmin ? newPagamento.valor : selectedPedidosTotal;
+    const value = selectedPedidosTotal;
     if (!pixKey || value <= 0) {
       setQrPreview('');
       setPixCopiaCola('');
@@ -270,7 +287,7 @@ const Pagamentos: React.FC = () => {
     void QRCode.toDataURL(payload, { width: 200, margin: 1 })
       .then(setQrPreview)
       .catch(() => setQrPreview(''));
-  }, [pixKey, selectedPedidosTotal, newPagamento.valor, isAdmin]);
+  }, [pixKey, pixNome, selectedPedidosTotal]);
 
   const loadPagamentos = async () => {
     try {
@@ -303,46 +320,30 @@ const Pagamentos: React.FC = () => {
     }
 
     try {
-      if (!isAdmin) {
-        if (!user?.id_cliente) {
-          setError('Usuário sem cliente associado');
-          return;
-        }
-
-        if (!selectedPedidoIds.length) {
-          setError('Selecione ao menos um pedido confirmado');
-          return;
-        }
-
-        const pixPayload = createPixPayload(pixKey, selectedPedidosTotal);
-        const qrCodeDataUrl = await QRCode.toDataURL(pixPayload, { width: 300, margin: 1 });
-
-        await pagamentoService.createPagamento({
-          id_cliente: user.id_cliente,
-          valor: selectedPedidosTotal,
-          qrcode: qrCodeDataUrl,
-          chavepix: pixKey,
-          pedidoIds: selectedPedidoIds,
-        });
-      } else {
-        if (newPagamento.id_cliente <= 0 || newPagamento.valor <= 0) {
-          setError('Preencha cliente e valor');
-          return;
-        }
-
-        const pixPayload = createPixPayload(pixKey, newPagamento.valor);
-        const qrCodeDataUrl = await QRCode.toDataURL(pixPayload, { width: 300, margin: 1 });
-
-        await pagamentoService.createPagamento({
-          ...newPagamento,
-          qrcode: qrCodeDataUrl,
-          chavepix: pixKey,
-        });
+      if (!user?.id_cliente) {
+        setError('Usuário sem cliente associado');
+        return;
       }
 
+      if (!selectedPedidoIds.length) {
+        setError('Selecione ao menos um pedido confirmado');
+        return;
+      }
+
+      const pixPayload = createPixPayload(pixKey, selectedPedidosTotal);
+      const qrCodeDataUrl = await QRCode.toDataURL(pixPayload, { width: 300, margin: 1 });
+
+      await pagamentoService.createPagamento({
+        id_cliente: user.id_cliente,
+        valor: selectedPedidosTotal,
+        qrcode: qrCodeDataUrl,
+        chavepix: pixKey,
+        pedidoIds: selectedPedidoIds,
+      });
+
       setSelectedPedidoIds([]);
-      setNewPagamento({ valor: 0, qrcode: 'auto', chavepix: 'auto', id_cliente: user?.id_cliente ?? 0 });
       await loadPagamentos();
+      await loadPedidosConfirmados();
       setError(null);
     } catch (err) {
       setError('Erro ao criar pagamento');
@@ -391,14 +392,30 @@ const Pagamentos: React.FC = () => {
           <option value="">Todos</option>
           <option value="pendente">Abertos</option>
           <option value="aprovado">Confirmados</option>
-          <option value="rejeitado">Rejeitados</option>
-          <option value="cancelado">Cancelados</option>
+          <option value="excluido">Excluídos</option>
         </select>
       </div>
 
       {isAdmin && (
         <div className="mb-6 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
           <h2 className="text-lg font-semibold mb-2">Configuração PIX</h2>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 mb-2">
+            <input
+              type="text"
+              placeholder="Nome do recebedor (aparece no PIX)"
+              value={pixNomeInput}
+              onChange={(e) => setPixNomeInput(e.target.value)}
+              className="border rounded-xl p-2"
+            />
+            <button
+              type="button"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
+              onClick={handleSavePixNome}
+              disabled={savingPixNome}
+            >
+              {savingPixNome ? 'Salvando...' : 'Salvar nome'}
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
             <input
               type="text"
@@ -423,29 +440,7 @@ const Pagamentos: React.FC = () => {
         <h2 className="text-xl font-semibold mb-2">Criar novo pagamento</h2>
         <form onSubmit={handleCreatePagamento} className="space-y-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {isAdmin ? (
-              <>
-                <input
-                  type="number"
-                  placeholder="ID do cliente"
-                  value={newPagamento.id_cliente}
-                  onChange={(e) => setNewPagamento({ ...newPagamento, id_cliente: Number(e.target.value) })}
-                  className="border rounded-xl p-2"
-                  required
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Valor"
-                  value={newPagamento.valor}
-                  onChange={(e) => setNewPagamento({ ...newPagamento, valor: Number(e.target.value) })}
-                  className="border rounded-xl p-2"
-                  required
-                />
-              </>
-            ) : (
-              <>
-                <div className="border rounded-xl p-2 bg-slate-50 md:col-span-2">
+            <div className="border rounded-xl p-2 bg-slate-50 md:col-span-2">
                   <p className="text-sm font-semibold text-slate-700 mb-2">Selecione um ou mais pedidos confirmados</p>
                   <div className="max-h-40 overflow-y-auto space-y-1">
                     {pedidosConfirmados.map((pedido) => {
@@ -475,17 +470,15 @@ const Pagamentos: React.FC = () => {
                     )}
                   </div>
                 </div>
-              </>
-            )}
             <input
               type="text"
-              value={pixKey || 'Chave PIX não configurada'}
+              value={pixKey ? `${pixNome ?`Chave: ${pixKey}. Nome: ` : ''}${pixNome}` : 'Chave PIX não configurada'}
               className="border rounded-xl p-2 bg-slate-50 md:col-span-2"
               readOnly
             />
             <input
               type="text"
-              value={isAdmin ? (newPagamento.valor > 0 ? `R$ ${newPagamento.valor.toFixed(2)}` : 'Informe um valor') : (selectedPedidosTotal > 0 ? `R$ ${selectedPedidosTotal.toFixed(2)}` : 'Selecione pedidos')}
+              value={selectedPedidosTotal > 0 ? `R$ ${selectedPedidosTotal.toFixed(2)}` : 'Selecione pedidos'}
               className="border rounded-xl p-2 bg-slate-50 md:col-span-2"
               readOnly
             />
@@ -508,8 +501,8 @@ const Pagamentos: React.FC = () => {
             </div>
           )}
 
-          {!isAdmin && pedidosConfirmados.length === 0 && (
-            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          {!pedidosConfirmados.length && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
               Você não possui pedidos confirmados disponíveis para pagamento.
             </p>
           )}
@@ -517,7 +510,7 @@ const Pagamentos: React.FC = () => {
           <button
             type="submit"
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl mt-2 font-semibold"
-            disabled={(!isAdmin && pedidosConfirmados.length === 0) || !pixKey}
+            disabled={pedidosConfirmados.length === 0 || !pixKey}
           >
             Criar pagamento
           </button>
@@ -541,9 +534,9 @@ const Pagamentos: React.FC = () => {
               <tr key={pagamento.id_pagamento} className="border-t">
                 <td className="px-4 py-2">{pagamento.id_pagamento}</td>
                 <td className="px-4 py-2">
-                  {pagamento.cliente?.nome ? `${pagamento.cliente.nome} (${pagamento.id_cliente})` : pagamento.id_cliente}
+                  {pagamento.cliente?.nome ? `${pagamento.cliente.nome}` : pagamento.id_cliente}
                 </td>
-                <td className="px-4 py-2">{pagamento.valor.toFixed(2)}</td>
+                <td className="px-4 py-2">R$ {pagamento.valor.toFixed(2)}</td>
                 <td className="px-4 py-2">{formatStatus(pagamento.status).toUpperCase()}</td>
                 <td className="px-4 py-2">{new Date(pagamento.data_criacao).toLocaleDateString()}</td>
                 {isAdmin && (

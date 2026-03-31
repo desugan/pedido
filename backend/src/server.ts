@@ -79,7 +79,7 @@ async function startServer(): Promise<void> {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`✓ Server running on http://0.0.0.0:${PORT}`);
-    console.log(`✓ Accessible at http://192.168.1.49:${PORT}`);
+    console.log(`✓ Accessible at http://192.168.0.18:${PORT}`);
     console.log(`✓ Environment: ${process.env.NODE_ENV}`);
   });
 }

@@ -65,4 +65,17 @@ export class ConfigService {
 
     return this.repository.setPixKey(value);
   }
+
+  async getPixNome(): Promise<string | null> {
+    return this.repository.getPixNome();
+  }
+
+  async setPixNome(nome: string): Promise<string> {
+    const value = (nome || '').trim();
+    if (!value) {
+      throw new Error('Nome PIX é obrigatório');
+    }
+
+    return this.repository.setPixNome(value);
+  }
 }

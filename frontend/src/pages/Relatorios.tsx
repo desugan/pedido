@@ -6,6 +6,7 @@ import { authService } from '../services/authService';
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
+const isCurrencyMetric = (key: string) => /valor|saldo|credito|crédito|limite|faturamento|ticket/i.test(key);
 
 const Relatorios: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -118,6 +119,22 @@ const Relatorios: React.FC = () => {
             <div className="bg-white rounded-2xl shadow p-5 border border-slate-100">
               <h2 className="text-xl font-bold mb-1">{resultado.cliente.nome}</h2>
               <span className="text-sm text-slate-500">Cliente #{resultado.cliente.id_cliente} · Status: {resultado.cliente.status?.toUpperCase()}</span>
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-xl bg-slate-50 px-4 py-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Limite de crédito</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900">{fmtBRL(resultado.cliente.financeiro?.limite_credito || 0)}</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-4 py-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Crédito utilizado</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900">{fmtBRL(resultado.cliente.financeiro?.saldo_utilizado || 0)}</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-4 py-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Saldo restante</div>
+                  <div className={`mt-1 text-lg font-semibold ${((resultado.cliente.financeiro?.limite_credito ?? 0) - (resultado.cliente.financeiro?.saldo_utilizado ?? 0)) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                    {fmtBRL((resultado.cliente.financeiro?.limite_credito ?? 0) - (resultado.cliente.financeiro?.saldo_utilizado ?? 0))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -125,7 +142,7 @@ const Relatorios: React.FC = () => {
             {Object.entries(resultado.totais).map(([chave, valor]) => (
               <div key={chave} className="bg-white rounded-2xl shadow p-4 border border-slate-100">
                 <div className="text-xs text-slate-500 uppercase tracking-wide">{chave.replace(/_/g, ' ')}</div>
-                <div className="text-xl font-bold mt-1">{typeof valor === 'number' && chave.toLowerCase().includes('valor') ? fmtBRL(valor) : valor}</div>
+                <div className="text-xl font-bold mt-1">{typeof valor === 'number' && isCurrencyMetric(chave) ? fmtBRL(valor) : valor}</div>
               </div>
             ))}
           </div>

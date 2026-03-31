@@ -6,6 +6,8 @@ import { authService } from '../services/authService';
 import { clienteService } from '../services/clienteService';
 import { Cliente } from '../types';
 
+const fmtBRL = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 const Pedidos: React.FC = () => {
   const [searchParams] = useSearchParams();
   const user = authService.getCurrentUser();
@@ -87,6 +89,25 @@ const Pedidos: React.FC = () => {
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const pagedPedidos = filteredPedidos.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   const selectedPedido = filteredPedidos.find((pedido) => pedido.id === selectedPedidoId) || null;
+  const selectedClienteId = isAdmin ? newPedido.clienteId : currentClienteId;
+  const selectedCliente = clientes.find((cliente) => cliente.id_cliente === selectedClienteId) || null;
+  
+  const calcularSaldoRestante = (cliente: any): number => {
+    const financeiro = cliente?.financeiro;
+    if (!financeiro) {
+      return 0;
+    }
+    const limiteCredito = Number(financeiro.limite_credito ?? 0);
+    const saldoUtilizado = Number(financeiro.saldo_utilizado ?? 0);
+    return limiteCredito - saldoUtilizado;
+  };
+
+  const totalNovoPedido = newPedido.itens.reduce(
+    (acc, item) => acc + item.quantidade * item.precoUnitario,
+    0
+  );
+  const saldoRestanteCliente = calcularSaldoRestante(selectedCliente);
+  const saldoInsuficiente = Boolean(selectedCliente && totalNovoPedido > saldoRestanteCliente);
 
   const getClienteNome = (clienteId: number): string => {
     const cliente = clientes.find((c) => c.id_cliente === clienteId);
@@ -190,6 +211,11 @@ const Pedidos: React.FC = () => {
       return;
     }
 
+    if (selectedCliente && saldoInsuficiente) {
+      setError(`Saldo restante insuficiente. Disponível: ${fmtBRL(saldoRestanteCliente)} | Pedido: ${fmtBRL(totalNovoPedido)}`);
+      return;
+    }
+
     try {
       await pedidoService.createPedido({
         ...newPedido,
@@ -197,10 +223,12 @@ const Pedidos: React.FC = () => {
       });
       setNewPedido({ clienteId: isAdmin ? 0 : currentClienteId, itens: [] });
       setNewItem({ produtoNome: '', quantidade: 1, precoUnitario: 0 });
+      await loadClientes();
       await loadPedidos();
       setError(null);
     } catch (err) {
-      setError('Erro ao criar pedido');
+      const message = (err as any)?.response?.data?.error || 'Erro ao criar pedido';
+      setError(message);
       console.error(err);
     }
   };
@@ -233,7 +261,8 @@ const Pedidos: React.FC = () => {
   const handleUpdateStatus = async (id: number, status: string) => {
     try {
       await pedidoService.updatePedidoStatus(id, status);
-      loadPedidos();
+      await loadPedidos();
+      await loadClientes();
     } catch (err) {
       setError('Erro ao atualizar status');
       console.error(err);
@@ -261,10 +290,8 @@ const Pedidos: React.FC = () => {
           className="filter-select border rounded-xl px-3 py-2 bg-white"
         >
           <option value="">Todos</option>
-          <option value="pendente">Pendente</option>
           <option value="confirmado">Confirmado</option>
-          <option value="pronto">Pronto</option>
-          <option value="entregue">Entregue</option>
+          <option value="pago">Pago</option>
           <option value="cancelado">Cancelado</option>
         </select>
       </div>
@@ -348,6 +375,37 @@ const Pedidos: React.FC = () => {
             </button>
           </div>
 
+          {selectedCliente && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Cliente</p>
+                <p className="font-semibold text-slate-900">{selectedCliente.nome}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Limite de crédito</p>
+                <p className="font-semibold text-slate-900">{fmtBRL(selectedCliente.financeiro?.limite_credito || 0)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Saldo restante</p>
+                <p className={`font-semibold ${saldoRestanteCliente < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                  {fmtBRL(saldoRestanteCliente)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Pedido atual</p>
+                <p className={`font-semibold ${saldoInsuficiente ? 'text-red-600' : 'text-slate-900'}`}>
+                  {fmtBRL(totalNovoPedido)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {selectedCliente && saldoInsuficiente && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              O saldo restante do cliente é menor que o valor do pedido.
+            </div>
+          )}
+
           <div>
             Itens no pedido: {newPedido.itens.map((item, index) => (
               <span key={index} className="inline-block px-2 py-1 mr-1 bg-gray-100 rounded">
@@ -356,7 +414,11 @@ const Pedidos: React.FC = () => {
             ))}
           </div>
 
-          <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl mt-2 font-semibold">
+          <button
+            type="submit"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl mt-2 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!selectedCliente || newPedido.itens.length === 0 || saldoInsuficiente}
+          >
             Criar pedido
           </button>
         </form>
@@ -390,7 +452,7 @@ const Pedidos: React.FC = () => {
                     {selectedPedidoId === pedido.id ? 'Ocultar' : 'Ver pedido'}
                   </button>
                 </td>
-                <td className="px-4 py-2">{pedido.total.toFixed(2)}</td>
+                <td className="px-4 py-2">R$ {pedido.total.toFixed(2)}</td>
                 <td className="px-4 py-2">{pedido.status.toUpperCase()}</td>
                 {isAdmin && (
                   <td className="px-4 py-2 space-x-2 whitespace-nowrap">

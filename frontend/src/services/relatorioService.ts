@@ -10,7 +10,14 @@ export interface RelatorioResponse {
   };
   totais: Record<string, number>;
   dados: unknown[];
-  cliente?: { id_cliente: number; nome: string; status: string } | null;
+  cliente?: {
+    id_cliente: number;
+    nome: string;
+    status: string;
+    limite_credito?: number;
+    saldo_restante?: number;
+    credito_utilizado?: number;
+  } | null;
   pedidos?: unknown[];
   pagamentos?: unknown[];
 }
