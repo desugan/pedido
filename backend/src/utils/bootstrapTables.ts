@@ -88,6 +88,21 @@ export async function ensureParityTables(): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 
+  const lancamentoStatusColumns = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(`
+    SELECT COUNT(*) AS total
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'lancamento'
+      AND COLUMN_NAME = 'status'
+  `);
+
+  if (Number(lancamentoStatusColumns[0]?.total || 0) === 0) {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE lancamento
+      ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'PENDENTE'
+    `);
+  }
+
   const clienteCreditoColumns = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(`
     SELECT COUNT(*) AS total
     FROM INFORMATION_SCHEMA.COLUMNS

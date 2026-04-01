@@ -545,15 +545,6 @@ const Pedidos: React.FC = () => {
                     <p className="text-sm text-gray-700 font-semibold">
                       Subtotal: R$ {((item.subtotal ?? item.precoUnitario * item.quantidade)).toFixed(2)}
                     </p>
-                    {isAdmin && ['pendente', 'confirmado'].includes(String(selectedPedido.status || '').toLowerCase()) && (
-                      <button
-                        type="button"
-                        className="mt-2 text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 font-semibold"
-                        onClick={() => void handleRemovePedidoItem(selectedPedido.id, item.id)}
-                      >
-                        Remover item
-                      </button>
-                    )}
                   </div>
                 ))}
               </div>

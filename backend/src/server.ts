@@ -1,7 +1,7 @@
+import './config/loadEnv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import clienteRoutes from './routes/clienteRoutes';
 import pedidoRoutes from './routes/pedidoRoutes';
 import pagamentoRoutes from './routes/pagamentoRoutes';
@@ -15,8 +15,6 @@ import configRoutes from './routes/configRoutes';
 import { ensureParityTables } from './utils/bootstrapTables';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from './middleware/auth';
-
-dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);

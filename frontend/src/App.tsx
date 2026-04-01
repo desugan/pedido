@@ -57,6 +57,31 @@ function AppContent(): React.ReactElement {
     };
   }, []);
 
+  // Expire session after 2 minutes of inactivity
+  useEffect(() => {
+    if (!user) return;
+
+    const TIMEOUT_MS = 2 * 60 * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        authService.logout();
+        navigate('/login', { replace: true });
+      }, TIMEOUT_MS);
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
+    };
+  }, [user, navigate]);
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     setSearchTerm(params.get('q') || '');
@@ -120,7 +145,7 @@ function AppContent(): React.ReactElement {
     : connectionLevel === 'partial'
       ? 'bg-amber-500'
       : 'bg-red-500';
-  const appVersion = 'V1.2';
+  const appVersion = 'V1.3';
   const monthYear = `${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
 
   return (
@@ -131,7 +156,7 @@ function AppContent(): React.ReactElement {
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-600 to-green-400 shadow" />
+                  <div className="h-10 w-10 rounded-xl bg-amber-50 border border-amber-200 shadow flex items-center justify-center text-2xl select-none">🍺</div>
                   <div>
                     <h1 className="text-[28px] md:text-[30px] font-black text-emerald-600 leading-none tracking-tight">BUTECO TI</h1>
                     <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[10px] font-semibold text-slate-400 shadow-sm">

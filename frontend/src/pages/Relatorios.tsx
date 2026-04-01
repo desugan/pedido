@@ -23,6 +23,9 @@ const Relatorios: React.FC = () => {
   const [resultado, setResultado] = useState<RelatorioResponse | null>(null);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [idClienteSel, setIdClienteSel] = useState<number>(clienteParam || (currentUser?.id_cliente ?? 0));
+  const [pagePedidos, setPagePedidos] = useState(1);
+  const [pagePagamentos, setPagePagamentos] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
     if (isAdmin) {
@@ -63,6 +66,8 @@ const Relatorios: React.FC = () => {
     try {
       setLoading(true);
       setErro(null);
+      setPagePedidos(1);
+      setPagePagamentos(1);
 
       if (!idClienteSel) {
         setErro('Selecione um usuário');
@@ -108,6 +113,12 @@ const Relatorios: React.FC = () => {
       void gerar();
     }
   }, [idClienteSel]);
+
+  const totalPagesPedidos = Math.max(1, Math.ceil((pedidosUsuario?.length ?? 0) / ITEMS_PER_PAGE));
+  const pagedPedidos = pedidosUsuario?.slice((pagePedidos - 1) * ITEMS_PER_PAGE, pagePedidos * ITEMS_PER_PAGE);
+
+  const totalPagesPagamentos = Math.max(1, Math.ceil((pagamentosUsuario?.length ?? 0) / ITEMS_PER_PAGE));
+  const pagedPagamentos = pagamentosUsuario?.slice((pagePagamentos - 1) * ITEMS_PER_PAGE, pagePagamentos * ITEMS_PER_PAGE);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -186,7 +197,7 @@ const Relatorios: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pedidosUsuario.map((p: any) => (
+                    {pagedPedidos!.map((p: any) => (
                       <tr key={p.id_pedido} className="border-t align-top">
                         <td className="px-4 py-2">#{p.id_pedido}</td>
                         <td className="px-4 py-2">{p.data ? fmtDate(p.data) : '—'}</td>
@@ -197,6 +208,13 @@ const Relatorios: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+                <div className="mt-3 mb-3 px-4 flex items-center justify-between">
+                  <p className="page-indicator-card text-sm font-medium">Página {pagePedidos} de {totalPagesPedidos}</p>
+                  <div className="space-x-2">
+                    <button type="button" className="px-3 py-1.5 rounded-xl border bg-white disabled:opacity-50 font-semibold" onClick={() => setPagePedidos((p) => Math.max(1, p - 1))} disabled={pagePedidos === 1}>Anterior</button>
+                    <button type="button" className="px-3 py-1.5 rounded-xl border bg-white disabled:opacity-50 font-semibold" onClick={() => setPagePedidos((p) => Math.min(totalPagesPedidos, p + 1))} disabled={pagePedidos === totalPagesPedidos}>Próxima</button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -213,7 +231,7 @@ const Relatorios: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {pagamentosUsuario.map((p: any) => (
+                    {pagedPagamentos!.map((p: any) => (
                       <tr key={p.id_pagamento} className="border-t align-top">
                         <td className="px-4 py-2">#{p.id_pagamento}</td>
                         <td className="px-4 py-2">{p.data_criacao ? fmtDate(p.data_criacao) : '—'}</td>
@@ -223,6 +241,13 @@ const Relatorios: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+                <div className="mt-3 mb-3 px-4 flex items-center justify-between">
+                  <p className="page-indicator-card text-sm font-medium">Página {pagePagamentos} de {totalPagesPagamentos}</p>
+                  <div className="space-x-2">
+                    <button type="button" className="px-3 py-1.5 rounded-xl border bg-white disabled:opacity-50 font-semibold" onClick={() => setPagePagamentos((p) => Math.max(1, p - 1))} disabled={pagePagamentos === 1}>Anterior</button>
+                    <button type="button" className="px-3 py-1.5 rounded-xl border bg-white disabled:opacity-50 font-semibold" onClick={() => setPagePagamentos((p) => Math.min(totalPagesPagamentos, p + 1))} disabled={pagePagamentos === totalPagesPagamentos}>Próxima</button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
