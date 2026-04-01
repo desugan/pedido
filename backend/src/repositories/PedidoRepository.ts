@@ -10,6 +10,45 @@ import {
 const prisma = new PrismaClient();
 
 export class PedidoRepository {
+  private async adjustEstoquePedido(
+    tx: any,
+    pedidoId: number,
+    operation: 'add' | 'subtract'
+  ): Promise<void> {
+    const itens = await tx.pedido_item.findMany({
+      where: { id_pedido: pedidoId },
+      select: { id_produto: true, qtd: true },
+    });
+
+    for (const item of itens) {
+      const quantidade = Number(item.qtd || 0);
+      if (quantidade <= 0) continue;
+
+      const produto = await tx.produto.findUnique({
+        where: { id_produto: item.id_produto },
+        select: { saldo: true },
+      });
+
+      if (!produto) continue;
+
+      if (operation === 'subtract') {
+        if (Number(produto.saldo || 0) < quantidade) {
+          throw new Error(`Estoque insuficiente para o produto ${item.id_produto}`);
+        }
+
+        await tx.produto.update({
+          where: { id_produto: item.id_produto },
+          data: { saldo: { decrement: quantidade } },
+        });
+      } else {
+        await tx.produto.update({
+          where: { id_produto: item.id_produto },
+          data: { saldo: { increment: quantidade } },
+        });
+      }
+    }
+  }
+
   private async ensureFinanceiro(tx: any, clienteId: number): Promise<void> {
     await tx.$executeRawUnsafe(
       `INSERT INTO financeiro (id_cliente, limite_credito, saldo_utilizado, ultimo_limite, data_criacao, usuario_alteracao)
@@ -57,6 +96,7 @@ export class PedidoRepository {
       where,
       orderBy: { id_pedido: 'desc' },
       include: {
+        cliente: { select: { nome: true } },
         pedido_item: true,
       },
     });
@@ -64,6 +104,7 @@ export class PedidoRepository {
     return pedidos.map((pedido) => ({
       id: pedido.id_pedido,
       clienteId: pedido.id_cliente,
+      clienteNome: pedido.cliente?.nome || undefined,
       status: pedido.status as any,
       total: pedido.total,
       createdAt: pedido.data,
@@ -82,7 +123,10 @@ export class PedidoRepository {
   async findById(id: number): Promise<Pedido | null> {
     const pedido = await prisma.pedido.findUnique({
       where: { id_pedido: id },
-      include: { pedido_item: true },
+      include: {
+        cliente: { select: { nome: true } },
+        pedido_item: true,
+      },
     });
 
     if (!pedido) return null;
@@ -90,6 +134,7 @@ export class PedidoRepository {
     return {
       id: pedido.id_pedido,
       clienteId: pedido.id_cliente,
+      clienteNome: pedido.cliente?.nome || undefined,
       status: pedido.status as any,
       total: pedido.total,
       createdAt: pedido.data,
@@ -109,12 +154,16 @@ export class PedidoRepository {
     const pedidos = await prisma.pedido.findMany({
       where: { id_cliente: clienteId },
       orderBy: { id_pedido: 'desc' },
-      include: { pedido_item: true },
+      include: {
+        cliente: { select: { nome: true } },
+        pedido_item: true,
+      },
     });
 
     return pedidos.map((pedido) => ({
       id: pedido.id_pedido,
       clienteId: pedido.id_cliente,
+      clienteNome: pedido.cliente?.nome || undefined,
       status: pedido.status as any,
       total: pedido.total,
       createdAt: pedido.data,
@@ -184,7 +233,10 @@ export class PedidoRepository {
       const updated = await tx.pedido.update({
         where: { id_pedido: id },
         data: { ...data },
-        include: { pedido_item: true },
+        include: {
+          cliente: { select: { nome: true } },
+          pedido_item: true,
+        },
       });
 
       const oldStatus = String(pedidoAtual.status || '').toLowerCase();
@@ -211,12 +263,24 @@ export class PedidoRepository {
         );
       }
 
+      const oldReservaEstoque = ['confirmado', 'em_pagamento', 'pago'].includes(oldStatus);
+      const newReservaEstoque = ['confirmado', 'em_pagamento', 'pago'].includes(newStatus);
+
+      if (!oldReservaEstoque && newReservaEstoque) {
+        await this.adjustEstoquePedido(tx, id, 'subtract');
+      }
+
+      if (oldReservaEstoque && !newReservaEstoque) {
+        await this.adjustEstoquePedido(tx, id, 'add');
+      }
+
       return updated;
     });
 
     return {
       id: pedidoAtualizado.id_pedido,
       clienteId: pedidoAtualizado.id_cliente,
+      clienteNome: pedidoAtualizado.cliente?.nome || undefined,
       status: pedidoAtualizado.status as any,
       total: pedidoAtualizado.total,
       createdAt: pedidoAtualizado.data,
@@ -233,44 +297,93 @@ export class PedidoRepository {
   }
 
   async delete(id: number): Promise<boolean> {
-    const pedido = await prisma.pedido.findUnique({ where: { id_pedido: id } });
+    const pedido = await prisma.pedido.findUnique({
+      where: { id_pedido: id },
+      include: { pedido_item: true },
+    });
     if (!pedido) return false;
 
-    await prisma.pedido_item.deleteMany({ where: { id_pedido: id } });
-    await prisma.pedido.delete({ where: { id_pedido: id } });
+    await prisma.$transaction(async (tx) => {
+      const status = String(pedido.status || '').toLowerCase();
+      const total = Number(pedido.total || 0);
+
+      if (!['cancelado', 'pago'].includes(status)) {
+        await this.adjustSaldoUtilizado(tx, pedido.id_cliente, total, 'subtract');
+      }
+
+      if (['confirmado', 'em_pagamento', 'pago'].includes(status)) {
+        await this.adjustEstoquePedido(tx, id, 'add');
+      }
+
+      await tx.pedido_item.deleteMany({ where: { id_pedido: id } });
+      await tx.pedido.delete({ where: { id_pedido: id } });
+    });
 
     return true;
   }
 
   async addItem(pedidoId: number, item: CreateItemPedidoInput): Promise<ItemPedido> {
-    const pedido = await prisma.pedido.findUnique({ where: { id_pedido: pedidoId } });
-    if (!pedido) throw new Error('Pedido não encontrado');
+    const pedidoItem = await prisma.$transaction(async (tx) => {
+      let produto = await tx.produto.findFirst({ where: { nome: item.produtoNome } });
+      if (!produto) {
+        produto = await tx.produto.create({
+          data: {
+            nome: item.produtoNome,
+            valor: item.precoUnitario,
+            marca: 'indefinida',
+            saldo: item.quantidade,
+          },
+        });
+      }
 
-    let produto = await prisma.produto.findFirst({ where: { nome: item.produtoNome } });
-    if (!produto) {
-      produto = await prisma.produto.create({
+      const novoItem = await tx.pedido_item.create({
         data: {
-          nome: item.produtoNome,
-          valor: item.precoUnitario,
-          marca: 'indefinida',
-          saldo: item.quantidade,
+          id_pedido: pedidoId,
+          id_produto: produto.id_produto,
+          qtd: item.quantidade,
+          vlr_item: item.precoUnitario,
+          vlr_total: item.quantidade * item.precoUnitario,
         },
       });
-    }
 
-    const pedidoItem = await prisma.pedido_item.create({
-      data: {
-        id_pedido: pedidoId,
-        id_produto: produto.id_produto,
-        qtd: item.quantidade,
-        vlr_item: item.precoUnitario,
-        vlr_total: item.quantidade * item.precoUnitario,
-      },
+      const pedidoAtual = await tx.pedido.findUnique({
+        where: { id_pedido: pedidoId },
+        select: { status: true, id_cliente: true },
+      });
+
+      if (!pedidoAtual) {
+        throw new Error('Pedido não encontrado');
+      }
+
+      const novosItens = await tx.pedido_item.findMany({ where: { id_pedido: pedidoId } });
+      const novoTotal = novosItens.reduce((acc, current) => acc + Number(current.vlr_total || 0), 0);
+      await tx.pedido.update({ where: { id_pedido: pedidoId }, data: { total: novoTotal } });
+
+      const status = String(pedidoAtual.status || '').toLowerCase();
+      const subtotalItem = Number(item.quantidade || 0) * Number(item.precoUnitario || 0);
+
+      if (!['cancelado', 'pago'].includes(status)) {
+        await this.adjustSaldoUtilizado(tx, pedidoAtual.id_cliente, subtotalItem, 'add');
+      }
+
+      if (['confirmado', 'em_pagamento', 'pago'].includes(status)) {
+        const produtoAtual = await tx.produto.findUnique({
+          where: { id_produto: produto.id_produto },
+          select: { saldo: true },
+        });
+
+        if (!produtoAtual || Number(produtoAtual.saldo || 0) < Number(item.quantidade || 0)) {
+          throw new Error('Estoque insuficiente para adicionar item ao pedido');
+        }
+
+        await tx.produto.update({
+          where: { id_produto: produto.id_produto },
+          data: { saldo: { decrement: Number(item.quantidade || 0) } },
+        });
+      }
+
+      return novoItem;
     });
-
-    const novosItens = await prisma.pedido_item.findMany({ where: { id_pedido: pedidoId } });
-    const novoTotal = novosItens.reduce((acc, current) => acc + current.vlr_total, 0);
-    await prisma.pedido.update({ where: { id_pedido: pedidoId }, data: { total: novoTotal } });
 
     return {
       id: pedidoItem.id_item_pedido,
@@ -286,11 +399,36 @@ export class PedidoRepository {
     const item = await prisma.pedido_item.findFirst({ where: { id_item_pedido: itemId, id_pedido: pedidoId } });
     if (!item) return false;
 
-    await prisma.pedido_item.delete({ where: { id_item_pedido: itemId } });
+    await prisma.$transaction(async (tx) => {
+      const pedido = await tx.pedido.findUnique({
+        where: { id_pedido: pedidoId },
+        select: { id_cliente: true, status: true },
+      });
 
-    const novosItens = await prisma.pedido_item.findMany({ where: { id_pedido: pedidoId } });
-    const novoTotal = novosItens.reduce((acc, current) => acc + current.vlr_total, 0);
-    await prisma.pedido.update({ where: { id_pedido: pedidoId }, data: { total: novoTotal } });
+      if (!pedido) {
+        throw new Error('Pedido não encontrado');
+      }
+
+      await tx.pedido_item.delete({ where: { id_item_pedido: itemId } });
+
+      const novosItens = await tx.pedido_item.findMany({ where: { id_pedido: pedidoId } });
+      const novoTotal = novosItens.reduce((acc, current) => acc + Number(current.vlr_total || 0), 0);
+      await tx.pedido.update({ where: { id_pedido: pedidoId }, data: { total: novoTotal } });
+
+      const status = String(pedido.status || '').toLowerCase();
+      const subtotal = Number(item.vlr_total || 0);
+
+      if (!['cancelado', 'pago'].includes(status)) {
+        await this.adjustSaldoUtilizado(tx, pedido.id_cliente, subtotal, 'subtract');
+      }
+
+      if (['confirmado', 'em_pagamento', 'pago'].includes(status)) {
+        await tx.produto.update({
+          where: { id_produto: item.id_produto },
+          data: { saldo: { increment: Number(item.qtd || 0) } },
+        });
+      }
+    });
 
     return true;
   }

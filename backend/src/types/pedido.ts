@@ -18,7 +18,8 @@ export interface CreateItemPedidoInput {
 export interface Pedido {
   id: number;
   clienteId: number;
-  status: 'pendente' | 'confirmado' | 'pronto' | 'entregue' | 'cancelado';
+  clienteNome?: string;
+  status: 'pendente' | 'confirmado' | 'em_pagamento' | 'pago' | 'cancelado';
   total: number;
   itens?: ItemPedido[];
   createdAt: Date;
@@ -31,7 +32,7 @@ export interface CreatePedidoInput {
 }
 
 export interface UpdatePedidoInput {
-  status?: 'pendente' | 'confirmado' | 'pronto' | 'entregue' | 'cancelado';
+  status?: 'pendente' | 'confirmado' | 'em_pagamento' | 'pago' | 'cancelado';
 }
 
 export interface PedidoRepository {

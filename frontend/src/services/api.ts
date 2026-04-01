@@ -1,30 +1,34 @@
-import axios from 'axios';
+﻿import axios from 'axios';
+import { API_BASE_URL } from '../config/env';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://192.168.0.18:3000',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor for logging
+// Attach JWT token to every request
 api.interceptors.request.use(
   (config) => {
-    console.log('API Request:', config.method?.toUpperCase(), config.url);
+    const token = localStorage.getItem('buteco_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
+// Auto-logout on 401
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    if (error.response?.status === 401) {
+      localStorage.removeItem('buteco_token');
+      localStorage.removeItem('buteco_user');
+      window.dispatchEvent(new Event('auth-changed'));
+    }
     return Promise.reject(error);
   }
 );

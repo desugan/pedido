@@ -11,6 +11,7 @@ import Fornecedores from './pages/Fornecedores';
 import Lancamentos from './pages/Lancamentos';
 import MudarSenha from './pages/MudarSenha';
 import { authService, AUTH_CHANGED_EVENT } from './services/authService';
+import { API_BASE_URL } from './config/env';
 
 type HealthResponse = {
   api?: boolean;
@@ -65,10 +66,8 @@ function AppContent(): React.ReactElement {
     let active = true;
 
     const loadHealth = async () => {
-      const baseURL = import.meta.env.VITE_API_URL || 'http://192.168.0.18:3000';
-
       try {
-        const response = await fetch(`${baseURL}/health`);
+        const response = await fetch(`${API_BASE_URL}/health`);
         if (!active) return;
 
         const data = (await response.json()) as HealthResponse;
@@ -121,7 +120,7 @@ function AppContent(): React.ReactElement {
     : connectionLevel === 'partial'
       ? 'bg-amber-500'
       : 'bg-red-500';
-  const appVersion = 'V1.0';
+  const appVersion = 'V1.2';
   const monthYear = `${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
 
   return (

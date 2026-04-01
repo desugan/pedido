@@ -8,6 +8,11 @@ const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', cur
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
 const isCurrencyMetric = (key: string) => /valor|saldo|credito|crédito|limite|faturamento|ticket/i.test(key);
 
+const asNumber = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
 const Relatorios: React.FC = () => {
   const [searchParams] = useSearchParams();
   const clienteParam = Number(searchParams.get('cliente') || 0);
@@ -78,6 +83,25 @@ const Relatorios: React.FC = () => {
 
   const pedidosUsuario = resultado?.pedidos as any[] | undefined;
   const pagamentosUsuario = resultado?.pagamentos as any[] | undefined;
+  const clienteFinanceiroRaw = resultado?.cliente && (resultado.cliente as any).financeiro;
+  const clienteFinanceiro = Array.isArray(clienteFinanceiroRaw)
+    ? (clienteFinanceiroRaw[0] ?? null)
+    : (clienteFinanceiroRaw ?? null);
+  const limiteCredito = resultado?.cliente
+    ? asNumber((resultado.cliente as any).limite_credito ?? clienteFinanceiro?.limite_credito ?? resultado?.totais?.limiteCredito)
+    : 0;
+  const creditoUtilizado = resultado?.cliente
+    ? asNumber((resultado.cliente as any).credito_utilizado ?? clienteFinanceiro?.saldo_utilizado ?? resultado?.totais?.creditoUtilizado)
+    : 0;
+  const saldoRestante = resultado?.cliente
+    ? asNumber((resultado.cliente as any).saldo_restante ?? limiteCredito - creditoUtilizado ?? resultado?.totais?.saldoRestante)
+    : 0;
+  const totaisEntries = resultado
+    ? Object.entries(resultado.totais).filter(([chave]) => {
+      if (!resultado.cliente) return true;
+      return !['limiteCredito', 'saldoRestante', 'creditoUtilizado'].includes(chave);
+    })
+    : [];
 
   useEffect(() => {
     if (idClienteSel) {
@@ -122,16 +146,16 @@ const Relatorios: React.FC = () => {
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-xl bg-slate-50 px-4 py-3">
                   <div className="text-xs uppercase tracking-wide text-slate-500">Limite de crédito</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-900">{fmtBRL(resultado.cliente.financeiro?.limite_credito || 0)}</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900">{fmtBRL(limiteCredito)}</div>
                 </div>
                 <div className="rounded-xl bg-slate-50 px-4 py-3">
                   <div className="text-xs uppercase tracking-wide text-slate-500">Crédito utilizado</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-900">{fmtBRL(resultado.cliente.financeiro?.saldo_utilizado || 0)}</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900">{fmtBRL(creditoUtilizado)}</div>
                 </div>
                 <div className="rounded-xl bg-slate-50 px-4 py-3">
                   <div className="text-xs uppercase tracking-wide text-slate-500">Saldo restante</div>
-                  <div className={`mt-1 text-lg font-semibold ${((resultado.cliente.financeiro?.limite_credito ?? 0) - (resultado.cliente.financeiro?.saldo_utilizado ?? 0)) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                    {fmtBRL((resultado.cliente.financeiro?.limite_credito ?? 0) - (resultado.cliente.financeiro?.saldo_utilizado ?? 0))}
+                  <div className={`mt-1 text-lg font-semibold ${saldoRestante < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                    {fmtBRL(saldoRestante)}
                   </div>
                 </div>
               </div>
@@ -139,7 +163,7 @@ const Relatorios: React.FC = () => {
           )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {Object.entries(resultado.totais).map(([chave, valor]) => (
+            {totaisEntries.map(([chave, valor]) => (
               <div key={chave} className="bg-white rounded-2xl shadow p-4 border border-slate-100">
                 <div className="text-xs text-slate-500 uppercase tracking-wide">{chave.replace(/_/g, ' ')}</div>
                 <div className="text-xl font-bold mt-1">{typeof valor === 'number' && isCurrencyMetric(chave) ? fmtBRL(valor) : valor}</div>
@@ -147,59 +171,61 @@ const Relatorios: React.FC = () => {
             ))}
           </div>
 
-          {pedidosUsuario && pedidosUsuario.length > 0 && (
-            <div className="bg-white rounded-2xl shadow border border-slate-100 overflow-x-auto">
-              <div className="px-5 py-3 border-b font-semibold text-slate-700">Pedidos ({pedidosUsuario.length})</div>
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left">ID</th>
-                    <th className="px-4 py-2 text-left">Data</th>
-                    <th className="px-4 py-2 text-left">Status</th>
-                    <th className="px-4 py-2 text-right">Total</th>
-                    <th className="px-4 py-2 text-left">Itens</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pedidosUsuario.map((p: any) => (
-                    <tr key={p.id_pedido} className="border-t">
-                      <td className="px-4 py-2">#{p.id_pedido}</td>
-                      <td className="px-4 py-2">{p.data ? fmtDate(p.data) : '—'}</td>
-                      <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
-                      <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.total)}</td>
-                      <td className="px-4 py-2 text-slate-500">{Array.isArray(p.pedido_item) ? p.pedido_item.length : '—'}</td>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+            {pedidosUsuario && pedidosUsuario.length > 0 && (
+              <div className="bg-white rounded-2xl shadow border border-slate-100 overflow-x-auto h-full">
+                <div className="px-5 py-3 border-b font-semibold text-slate-700">Pedidos ({pedidosUsuario.length})</div>
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left">ID</th>
+                      <th className="px-4 py-2 text-left">Data</th>
+                      <th className="px-4 py-2 text-left">Status</th>
+                      <th className="px-4 py-2 text-right">Total</th>
+                      <th className="px-4 py-2 text-left">Itens</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {pedidosUsuario.map((p: any) => (
+                      <tr key={p.id_pedido} className="border-t align-top">
+                        <td className="px-4 py-2">#{p.id_pedido}</td>
+                        <td className="px-4 py-2">{p.data ? fmtDate(p.data) : '—'}</td>
+                        <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
+                        <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.total)}</td>
+                        <td className="px-4 py-2 text-slate-500">{Array.isArray(p.pedido_item) ? p.pedido_item.length : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-          {pagamentosUsuario && pagamentosUsuario.length > 0 && (
-            <div className="bg-white rounded-2xl shadow border border-slate-100 overflow-x-auto">
-              <div className="px-5 py-3 border-b font-semibold text-slate-700">Pagamentos ({pagamentosUsuario.length})</div>
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left">ID</th>
-                    <th className="px-4 py-2 text-left">Data</th>
-                    <th className="px-4 py-2 text-left">Status</th>
-                    <th className="px-4 py-2 text-right">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagamentosUsuario.map((p: any) => (
-                    <tr key={p.id_pagamento} className="border-t">
-                      <td className="px-4 py-2">#{p.id_pagamento}</td>
-                      <td className="px-4 py-2">{p.data_criacao ? fmtDate(p.data_criacao) : '—'}</td>
-                      <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
-                      <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
+            {pagamentosUsuario && pagamentosUsuario.length > 0 && (
+              <div className="bg-white rounded-2xl shadow border border-slate-100 overflow-x-auto h-full">
+                <div className="px-5 py-3 border-b font-semibold text-slate-700">Pagamentos ({pagamentosUsuario.length})</div>
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left">ID</th>
+                      <th className="px-4 py-2 text-left">Data</th>
+                      <th className="px-4 py-2 text-left">Status</th>
+                      <th className="px-4 py-2 text-right">Valor</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {pagamentosUsuario.map((p: any) => (
+                      <tr key={p.id_pagamento} className="border-t align-top">
+                        <td className="px-4 py-2">#{p.id_pagamento}</td>
+                        <td className="px-4 py-2">{p.data_criacao ? fmtDate(p.data_criacao) : '—'}</td>
+                        <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
+                        <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -40,6 +40,29 @@ export class PagamentoRepository {
     );
   }
 
+  private async addSaldoUtilizado(tx: any, clienteId: number, amount: number): Promise<void> {
+    await this.ensureFinanceiro(tx, clienteId);
+
+    const financeiroRows = await tx.$queryRawUnsafe(
+      'SELECT saldo_utilizado FROM financeiro WHERE id_cliente = ? LIMIT 1',
+      clienteId
+    ) as Array<{ saldo_utilizado: number }>;
+    const financeiro = financeiroRows[0];
+    if (!financeiro) {
+      return;
+    }
+
+    const atual = Number(financeiro.saldo_utilizado || 0);
+    const novoSaldo = atual + Number(amount || 0);
+
+    await tx.$executeRawUnsafe(
+      'UPDATE financeiro SET saldo_utilizado = ?, usuario_alteracao = ? WHERE id_cliente = ?',
+      novoSaldo,
+      'SISTEMA',
+      clienteId
+    );
+  }
+
   async findAll(status?: string): Promise<Pagamento[]> {
     const where = status ? { status } : {};
 
@@ -117,6 +140,23 @@ export class PagamentoRepository {
 
   async create(data: CreatePagamentoInput): Promise<Pagamento> {
     const pagamento = await prisma.$transaction(async (tx) => {
+      const uniquePedidoIds = [...new Set((data.pedidoIds || []).filter((id) => id > 0))];
+
+      if (uniquePedidoIds.length) {
+        const pedidosElegiveis = await tx.pedido.findMany({
+          where: {
+            id_pedido: { in: uniquePedidoIds },
+            id_cliente: data.id_cliente,
+            status: 'confirmado',
+          },
+          select: { id_pedido: true },
+        });
+
+        if (pedidosElegiveis.length !== uniquePedidoIds.length) {
+          throw new Error('Há pedidos inválidos para pagamento (cliente/status).');
+        }
+      }
+
       const created = await tx.pagamento.create({
         data: {
           valor: data.valor,
@@ -128,14 +168,17 @@ export class PagamentoRepository {
         },
       });
 
-      const uniquePedidoIds = [...new Set((data.pedidoIds || []).filter((id) => id > 0))];
-
       if (uniquePedidoIds.length) {
         await tx.pagamentopedido.createMany({
           data: uniquePedidoIds.map((pedidoId) => ({
             id_pedido: pedidoId,
             id_pagamento: created.id_pagamento,
           })),
+        });
+
+        await tx.pedido.updateMany({
+          where: { id_pedido: { in: uniquePedidoIds }, status: 'confirmado' },
+          data: { status: 'em_pagamento' },
         });
       }
 
@@ -181,7 +224,13 @@ export class PagamentoRepository {
         },
       });
 
-      if (data.status === 'aprovado') {
+      const oldStatus = String(pagamentoAtual.status || '').toLowerCase();
+      const newStatus = String(updated.status || '').toLowerCase();
+      const wasAprovado = oldStatus === 'aprovado';
+      const isAprovado = newStatus === 'aprovado';
+      const isRollbackStatus = ['cancelado', 'rejeitado', 'excluido', 'pendente'].includes(newStatus);
+
+      if (!wasAprovado && isAprovado) {
         const pedidoIds = updated.pagamentopedido.map((pp) => pp.id_pedido);
         if (pedidoIds.length) {
           const pedidosAtuais = await tx.pedido.findMany({
@@ -190,7 +239,7 @@ export class PagamentoRepository {
           });
 
           await tx.pedido.updateMany({
-            where: { id_pedido: { in: pedidoIds } },
+            where: { id_pedido: { in: pedidoIds }, status: { in: ['confirmado', 'em_pagamento'] } },
             data: { status: 'pago' },
           });
 
@@ -207,6 +256,38 @@ export class PagamentoRepository {
 
           for (const [clienteIdStr, valor] of Object.entries(consumoPorCliente)) {
             await this.subtractSaldoUtilizado(tx, Number(clienteIdStr), Number(valor || 0));
+          }
+        }
+      }
+
+      if (isRollbackStatus) {
+        const pedidoIds = updated.pagamentopedido.map((pp) => pp.id_pedido);
+        if (pedidoIds.length) {
+          const pedidosAtuais = await tx.pedido.findMany({
+            where: { id_pedido: { in: pedidoIds } },
+            select: { id_pedido: true, id_cliente: true, total: true, status: true },
+          });
+
+          await tx.pedido.updateMany({
+            where: { id_pedido: { in: pedidoIds }, status: { in: ['em_pagamento', 'pago'] } },
+            data: { status: 'confirmado' },
+          });
+
+          if (wasAprovado) {
+            const consumoPorCliente = pedidosAtuais.reduce((acc, pedido) => {
+              const statusAtual = String(pedido.status || '').toLowerCase();
+              if (statusAtual !== 'pago') {
+                return acc;
+              }
+
+              const clienteId = Number(pedido.id_cliente);
+              acc[clienteId] = (acc[clienteId] || 0) + Number(pedido.total || 0);
+              return acc;
+            }, {} as Record<number, number>);
+
+            for (const [clienteIdStr, valor] of Object.entries(consumoPorCliente)) {
+              await this.addSaldoUtilizado(tx, Number(clienteIdStr), Number(valor || 0));
+            }
           }
         }
       }
@@ -229,12 +310,49 @@ export class PagamentoRepository {
   }
 
   async delete(id: number): Promise<boolean> {
-    const pagamento = await prisma.pagamento.findUnique({ where: { id_pagamento: id } });
+    const pagamento = await prisma.pagamento.findUnique({
+      where: { id_pagamento: id },
+      include: { pagamentopedido: true },
+    });
     if (!pagamento) return false;
 
-    await prisma.pagamento.update({
-      where: { id_pagamento: id },
-      data: { status: 'excluido' },
+    await prisma.$transaction(async (tx) => {
+      const oldStatus = String(pagamento.status || '').toLowerCase();
+      const pedidoIds = pagamento.pagamentopedido.map((pp) => pp.id_pedido);
+
+      await tx.pagamento.update({
+        where: { id_pagamento: id },
+        data: { status: 'excluido' },
+      });
+
+      if (pedidoIds.length) {
+        const pedidosAtuais = await tx.pedido.findMany({
+          where: { id_pedido: { in: pedidoIds } },
+          select: { id_pedido: true, id_cliente: true, total: true, status: true },
+        });
+
+        await tx.pedido.updateMany({
+          where: { id_pedido: { in: pedidoIds }, status: { in: ['em_pagamento', 'pago'] } },
+          data: { status: 'confirmado' },
+        });
+
+        if (oldStatus === 'aprovado') {
+          const consumoPorCliente = pedidosAtuais.reduce((acc, pedido) => {
+            const statusAtual = String(pedido.status || '').toLowerCase();
+            if (statusAtual !== 'pago') {
+              return acc;
+            }
+
+            const clienteId = Number(pedido.id_cliente);
+            acc[clienteId] = (acc[clienteId] || 0) + Number(pedido.total || 0);
+            return acc;
+          }, {} as Record<number, number>);
+
+          for (const [clienteIdStr, valor] of Object.entries(consumoPorCliente)) {
+            await this.addSaldoUtilizado(tx, Number(clienteIdStr), Number(valor || 0));
+          }
+        }
+      }
     });
 
     return true;

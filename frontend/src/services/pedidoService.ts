@@ -23,7 +23,8 @@ export interface ItemPedido {
 export interface Pedido {
   id: number;
   clienteId: number;
-  status:  'confirmado' | 'pago' | 'cancelado';
+  clienteNome?: string;
+  status: 'confirmado' | 'em_pagamento' | 'pago' | 'cancelado';
   total: number;
   itens?: ItemPedido[];
   createdAt: string;

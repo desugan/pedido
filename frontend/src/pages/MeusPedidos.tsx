@@ -2,6 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { pedidoService, Pedido } from '../services/pedidoService';
 import { authService } from '../services/authService';
 
+const formatPedidoStatus = (status: string): string => {
+  const normalized = String(status || '').trim().toLowerCase().replace(/_/g, ' ');
+  if (!normalized) return '';
+  return normalized.toUpperCase();
+};
+
 const MeusPedidos: React.FC = () => {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +83,7 @@ const MeusPedidos: React.FC = () => {
                     <span className="text-sm text-gray-500">Sem itens</span>
                   )}
                 </td>
-                <td className="px-4 py-2">{pedido.status.toUpperCase()}</td>
+                <td className="px-4 py-2">{formatPedidoStatus(pedido.status)}</td>
                 <td className="px-4 py-2">{pedido.total.toFixed(2)}</td>
               </tr>
             ))}

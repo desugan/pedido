@@ -51,16 +51,23 @@ export class ClienteService {
 
     const statusSolicitado = String(data.status || '').trim().toUpperCase();
     if (statusSolicitado) {
-      const pedidosPendentes = await this.repository.countPedidosPendentes(id);
-
-      // If there are pending orders, client cannot be regularized to ATIVO.
-      if (statusSolicitado === 'ATIVO' && pedidosPendentes > 0) {
-        throw new Error('Não é possível regularizar: cliente possui pedidos pendentes');
+      if (statusSolicitado === 'INADIMPLENTE') {
+        throw new Error('Status INADIMPLENTE é definido automaticamente ao inativar cliente com débitos');
       }
 
-      // If trying to inactivate while pending orders exist, keep as INADIMPLENTE.
-      if (statusSolicitado === 'INATIVO' && pedidosPendentes > 0) {
-        data.status = 'INADIMPLENTE';
+      if (statusSolicitado === 'INATIVO') {
+        const [clienteAtual, pedidosPendentes] = await Promise.all([
+          this.repository.findById(id),
+          this.repository.countPedidosPendentes(id),
+        ]);
+
+        const saldoUtilizado = Number(clienteAtual?.financeiro?.saldo_utilizado ?? 0);
+        const possuiDebitos = saldoUtilizado > 0 || pedidosPendentes > 0;
+        data.status = possuiDebitos ? 'INADIMPLENTE' : 'INATIVO';
+      }
+
+      if (statusSolicitado === 'ATIVO') {
+        data.status = 'ATIVO';
       }
     }
 

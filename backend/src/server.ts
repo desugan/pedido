@@ -14,18 +14,41 @@ import lancamentoRoutes from './routes/lancamentoRoutes';
 import configRoutes from './routes/configRoutes';
 import { ensureParityTables } from './utils/bootstrapTables';
 import { PrismaClient } from '@prisma/client';
+import { requireAuth } from './middleware/auth';
 
 dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const prisma = new PrismaClient();
+const hostIp = process.env.HOST_IP || 'localhost';
+
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+  : ['http://localhost:5173', 'http://localhost:3000'];
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // allow requests with no origin (e.g. same-origin, curl, mobile apps)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Global JWT guard — only POST /api/auth/login and /health are public
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path === '/health') return next();
+  if (req.path === '/api/auth/login' && req.method === 'POST') return next();
+  return requireAuth(req, res, next);
+});
 
 // Health check
 app.get('/health', async (_req: express.Request, res: express.Response) => {
@@ -79,7 +102,7 @@ async function startServer(): Promise<void> {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`✓ Server running on http://0.0.0.0:${PORT}`);
-    console.log(`✓ Accessible at http://192.168.0.18:${PORT}`);
+    console.log(`✓ Accessible at http://${hostIp}:${PORT}`);
     console.log(`✓ Environment: ${process.env.NODE_ENV}`);
   });
 }

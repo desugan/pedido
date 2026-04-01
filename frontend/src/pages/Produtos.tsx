@@ -87,10 +87,30 @@ const Produtos: React.FC = () => {
       {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
 
       <form onSubmit={submit} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6 grid grid-cols-1 md:grid-cols-4 gap-2">
-        <input className="border rounded-xl p-2" placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-        <input className="border rounded-xl p-2" placeholder="Marca" value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} required />
-        <input className="border rounded-xl p-2" type="number" step="0.01" placeholder="Valor" value={form.valor} onChange={(e) => setForm({ ...form, valor: Number(e.target.value) })} required />
-        <input className="border rounded-xl p-2" type="number" step="0.01" placeholder="Saldo" value={form.saldo} onChange={(e) => setForm({ ...form, saldo: Number(e.target.value) })} required />
+        <input className="border rounded-xl p-2" aria-label="Nome do produto" placeholder="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
+        <input className="border rounded-xl p-2" aria-label="Marca" placeholder="Marca" value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} required />
+        <input
+          className="border rounded-xl p-2"
+          aria-label="Valor (R$)"
+          type="number"
+          step="0.01"
+          min={0}
+          placeholder="Valor (R$)"
+          value={form.valor === 0 ? '' : form.valor}
+          onChange={(e) => setForm({ ...form, valor: Number(e.target.value) || 0 })}
+          required
+        />
+        <input
+          className="border rounded-xl p-2"
+          aria-label="Quantidade em estoque"
+          type="number"
+          step="1"
+          min={0}
+          placeholder="Quantidade em estoque"
+          value={form.saldo === 0 ? '' : form.saldo}
+          onChange={(e) => setForm({ ...form, saldo: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+          required
+        />
         <button className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-2 md:col-span-4 font-semibold" type="submit">{editId ? 'Atualizar' : 'Salvar'}</button>
       </form>
 
@@ -112,8 +132,8 @@ const Produtos: React.FC = () => {
                 <td className="px-4 py-2">{p.id_produto}</td>
                 <td className="px-4 py-2">{p.nome}</td>
                 <td className="px-4 py-2">{p.marca}</td>
-                <td className="px-4 py-2">{p.valor.toFixed(2)}</td>
-                <td className="px-4 py-2">{p.saldo.toFixed(2)}</td>
+                <td className="px-4 py-2">R$ {p.valor.toFixed(2)}</td>
+                <td className="px-4 py-2">{Math.floor(p.saldo)}</td>
                 <td className="px-4 py-2 space-x-2">
                   <button className="bg-green-600 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => editar(p)}>Editar</button>
                   <button className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => excluir(p.id_produto)}>Excluir</button>

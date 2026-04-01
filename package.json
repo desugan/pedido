@@ -1,23 +1,14 @@
 {
-  "name": "pedido-backend",
-  "version": "1.0.0",
-  "description": "Backend API - Buteco do TI",
-  "main": "dist/server.js",
+  "name": "pedido-workspace",
+  "version": "1.2.0",
+  "description": "Buteco do TI workspace",
   "type": "module",
   "scripts": {
-    "dev:full": "cd backend && npm run dev\" \"cd frontend && npm run dev\"",
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
-    "format": "prettier --write 'src/**/*.ts'",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "dev": "concurrently -k -n BACKEND,FRONTEND -c cyan,green \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "test": "npm --prefix backend test"
   },
   "keywords": [
     "pedidos",
@@ -44,6 +35,7 @@
     "prettier": "^3.1.1",
     "prettier-plugin-tailwindcss": "^0.5.11",
     "prisma": "^5.8.0",
+    "concurrently": "^9.0.1",
     "ts-jest": "^29.1.1",
     "tsx": "^4.21.0",
     "typescript": "^5.3.3"

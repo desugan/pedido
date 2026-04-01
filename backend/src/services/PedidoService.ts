@@ -7,7 +7,7 @@ import {
   CreateItemPedidoInput,
 } from '../types/pedido';
 
-const allowedStatus = ['confirmado', 'pago', 'cancelado'];
+const allowedStatus = ['confirmado', 'em_pagamento', 'pago', 'cancelado'];
 
 export class PedidoService {
   private repository = new PedidoRepository();

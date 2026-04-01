@@ -25,7 +25,7 @@ const Pagamentos: React.FC = () => {
   const [savingPixNome, setSavingPixNome] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
   const [pixCopiaCola, setPixCopiaCola] = useState('');
-  const normalizeStatus = (status: string | undefined): 'pendente' | 'aprovado' | 'rejeitado' | 'cancelado' | '' => {
+  const normalizeStatus = (status: string | undefined): 'pendente' | 'aprovado' | 'rejeitado' | 'cancelado' | 'excluido' | '' => {
     const value = (status || '').trim().toLowerCase();
 
     if (value === 'aberto' || value === 'pendente' || value === 'aguardando' || value === 'em_aberto' || value === 'em aberto' || value === 'processando pagamento') return 'pendente';

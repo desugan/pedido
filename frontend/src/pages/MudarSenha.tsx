@@ -25,7 +25,7 @@ const MudarSenha: React.FC = () => {
       setErro(null);
       setSucesso(null);
 
-      await authService.alterarSenha(user.id_usuario, senhaAtual, novaSenha, confirmarSenha);
+      await authService.alterarSenha(senhaAtual, novaSenha, confirmarSenha);
       setSucesso('Senha alterada com sucesso. Faça login novamente.');
 
       setTimeout(() => {

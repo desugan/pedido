@@ -12,6 +12,7 @@ export interface AuthUser {
 }
 
 const STORAGE_KEY = 'buteco_user';
+const TOKEN_KEY = 'buteco_token';
 
 export const authService = {
   async login(usuario: string, senha: string): Promise<AuthUser> {
@@ -19,20 +20,19 @@ export const authService = {
       usuario: usuario.trim(),
       senha: senha.trim(),
     });
-    const user = response.data as AuthUser;
+    const { token, user } = response.data as { token: string; user: AuthUser };
+    localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
     window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
     return user;
   },
 
   async alterarSenha(
-    id_usuario: number,
     senhaAtual: string,
     novaSenha: string,
     confirmarSenha: string
   ): Promise<void> {
     await api.post('/api/auth/alterar-senha', {
-      id_usuario,
       senhaAtual,
       novaSenha,
       confirmarSenha,
@@ -41,6 +41,7 @@ export const authService = {
 
   logout(): void {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
   },
 

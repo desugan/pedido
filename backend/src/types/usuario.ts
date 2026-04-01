@@ -3,7 +3,6 @@ export interface Usuario {
   id_cliente: number;
   id_perfil: number;
   usuario: string;
-  senha: string;
   cliente_nome?: string;
   perfil_nome?: string;
 }

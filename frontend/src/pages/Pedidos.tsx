@@ -8,6 +8,12 @@ import { Cliente } from '../types';
 
 const fmtBRL = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+const formatPedidoStatus = (status: string): string => {
+  const normalized = String(status || '').trim().toLowerCase().replace(/_/g, ' ');
+  if (!normalized) return '';
+  return normalized.toUpperCase();
+};
+
 const Pedidos: React.FC = () => {
   const [searchParams] = useSearchParams();
   const user = authService.getCurrentUser();
@@ -114,6 +120,18 @@ const Pedidos: React.FC = () => {
     return cliente?.nome || `Cliente ${clienteId}`;
   };
 
+  const getPedidoClienteNome = (pedido: Pedido): string => {
+    if (pedido.clienteNome?.trim()) return pedido.clienteNome;
+    return getClienteNome(pedido.clienteId);
+  };
+
+  const handleRemoveDraftItem = (indexToRemove: number) => {
+    setNewPedido((prev) => ({
+      ...prev,
+      itens: prev.itens.filter((_, index) => index !== indexToRemove),
+    }));
+  };
+
   const openDetails = async (pedidoId: number) => {
     if (selectedPedidoId === pedidoId) {
       setSelectedPedidoId(null);
@@ -130,6 +148,23 @@ const Pedidos: React.FC = () => {
       setError('Erro ao carregar itens do pedido');
     } finally {
       setDetailsLoading(false);
+    }
+  };
+
+  const handleRemovePedidoItem = async (pedidoId: number, itemId?: number) => {
+    if (!itemId) return;
+    if (!window.confirm('Deseja remover este item do pedido?')) return;
+
+    try {
+      await pedidoService.removeItemFromPedido(pedidoId, itemId);
+      const items = await pedidoService.getItemsByPedidoId(pedidoId);
+      setSelectedPedidoItems(items);
+      await loadPedidos();
+      await loadClientes();
+      setError(null);
+    } catch (err: any) {
+      const message = err?.response?.data?.error || 'Erro ao remover item do pedido';
+      setError(message);
     }
   };
 
@@ -195,7 +230,7 @@ const Pedidos: React.FC = () => {
       }
 
       const data = await clienteService.getAllClientes();
-      setClientes(data.filter((cliente) => cliente.status === 'ATIVO'));
+      setClientes(data);
     } catch (err) {
       setError('Erro ao carregar clientes');
       console.error(err);
@@ -291,6 +326,7 @@ const Pedidos: React.FC = () => {
         >
           <option value="">Todos</option>
           <option value="confirmado">Confirmado</option>
+          <option value="em_pagamento">Em pagamento</option>
           <option value="pago">Pago</option>
           <option value="cancelado">Cancelado</option>
         </select>
@@ -335,7 +371,7 @@ const Pedidos: React.FC = () => {
               <option value="">Selecione produto</option>
               {produtos.map((produto) => (
                 <option key={produto.id_produto} value={produto.nome}>
-                  {produto.nome} - Saldo: {produto.saldo.toFixed(0)} - R$ {produto.valor.toFixed(2)}
+                  {produto.nome} - Saldo: {produto.saldo.toFixed(0)} - Valor: {produto.valor.toFixed(2)}
                 </option>
               ))}
             </select>
@@ -408,8 +444,16 @@ const Pedidos: React.FC = () => {
 
           <div>
             Itens no pedido: {newPedido.itens.map((item, index) => (
-              <span key={index} className="inline-block px-2 py-1 mr-1 bg-gray-100 rounded">
+              <span key={index} className="inline-flex items-center gap-2 px-2 py-1 mr-1 mb-1 bg-gray-100 rounded">
                 {normalizeProdutoNome(item.produtoNome)} ({item.quantidade})
+                <button
+                  type="button"
+                  className="text-red-600 font-bold leading-none"
+                  onClick={() => handleRemoveDraftItem(index)}
+                  aria-label={`Remover item ${normalizeProdutoNome(item.produtoNome)}`}
+                >
+                  x
+                </button>
               </span>
             ))}
           </div>
@@ -441,7 +485,7 @@ const Pedidos: React.FC = () => {
             {pagedPedidos.map((pedido) => (
               <tr key={pedido.id} className="border-t">
                 <td className="px-4 py-2">{pedido.id}</td>
-                <td className="px-4 py-2">{isAdmin ? getClienteNome(pedido.clienteId) : 'Você'}</td>
+                <td className="px-4 py-2">{isAdmin ? getPedidoClienteNome(pedido) : 'Você'}</td>
                 <td className="px-4 py-2 text-sm text-slate-500 whitespace-nowrap">{pedido.createdAt ? new Date(pedido.createdAt).toLocaleDateString('pt-BR') : '—'}</td>
                 <td className="px-4 py-2">
                   <button
@@ -453,7 +497,7 @@ const Pedidos: React.FC = () => {
                   </button>
                 </td>
                 <td className="px-4 py-2">R$ {pedido.total.toFixed(2)}</td>
-                <td className="px-4 py-2">{pedido.status.toUpperCase()}</td>
+                <td className="px-4 py-2">{formatPedidoStatus(pedido.status)}</td>
                 {isAdmin && (
                   <td className="px-4 py-2 space-x-2 whitespace-nowrap">
                     <button
@@ -482,7 +526,7 @@ const Pedidos: React.FC = () => {
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3">
               <h3 className="text-lg font-semibold">Pedido #{selectedPedido.id}</h3>
               <p className="text-sm text-gray-600">
-                Cliente {getClienteNome(selectedPedido.clienteId)} | Status: {selectedPedido.status.toUpperCase()} | Total: R$ {selectedPedido.total.toFixed(2)}
+                Cliente {getPedidoClienteNome(selectedPedido)} | Status: {formatPedidoStatus(selectedPedido.status)} | Total: R$ {selectedPedido.total.toFixed(2)}
               </p>
             </div>
 
@@ -501,6 +545,15 @@ const Pedidos: React.FC = () => {
                     <p className="text-sm text-gray-700 font-semibold">
                       Subtotal: R$ {((item.subtotal ?? item.precoUnitario * item.quantidade)).toFixed(2)}
                     </p>
+                    {isAdmin && ['pendente', 'confirmado'].includes(String(selectedPedido.status || '').toLowerCase()) && (
+                      <button
+                        type="button"
+                        className="mt-2 text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 font-semibold"
+                        onClick={() => void handleRemovePedidoItem(selectedPedido.id, item.id)}
+                      >
+                        Remover item
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { CreateLancamentoInput, Lancamento, LancamentoItem } from '../types/lancamento';
 
 const prisma = new PrismaClient();
@@ -16,7 +16,7 @@ function mapDbError(error: unknown): Error {
 
 export class LancamentoRepository {
   private async applyConfirmedStock(
-    tx: PrismaClient,
+    tx: Prisma.TransactionClient,
     idLancamento: number
   ): Promise<void> {
     const itens = await tx.$queryRawUnsafe<Array<{ id_produto: number; qtd: number; vlr_item: number }>>(
@@ -53,7 +53,7 @@ export class LancamentoRepository {
   }
 
   private async revertConfirmedStock(
-    tx: PrismaClient,
+    tx: Prisma.TransactionClient,
     idLancamento: number
   ): Promise<void> {
     const itens = await tx.$queryRawUnsafe<Array<{ id_produto: number; qtd: number }>>(

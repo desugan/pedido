@@ -4,14 +4,7 @@ import { CreateUsuarioInput, Perfil, UpdateUsuarioInput, Usuario } from '../type
 const prisma = new PrismaClient();
 const prismaAny = prisma as any;
 
-function maskSenha(value: string): string {
-  const senha = (value || '').trim();
-  if (!senha) return '';
-  if (senha.length <= 8) return '********';
-  return `${senha.slice(0, 4)}...${senha.slice(-4)}`;
-}
-
-async function mapUsuariosWithNames(items: Array<{ id_usuario: number; id_cliente: number; id_perfil: number; usuario: string; senha: string }>): Promise<Usuario[]> {
+async function mapUsuariosWithNames(items: Array<{ id_usuario: number; id_cliente: number; id_perfil: number; usuario: string }>): Promise<Usuario[]> {
   const clienteIds = Array.from(new Set(items.map((u) => u.id_cliente)));
   const perfilIds = Array.from(new Set(items.map((u) => u.id_perfil)));
 
@@ -28,14 +21,13 @@ async function mapUsuariosWithNames(items: Array<{ id_usuario: number; id_client
     id_cliente: data.id_cliente,
     id_perfil: data.id_perfil,
     usuario: data.usuario,
-    senha: maskSenha(data.senha),
     cliente_nome: clienteMap.get(data.id_cliente),
     perfil_nome: perfilMap.get(data.id_perfil),
   }));
 }
 
 function mapUsuario(
-  data: { id_usuario: number; id_cliente: number; id_perfil: number; usuario: string; senha: string },
+  data: { id_usuario: number; id_cliente: number; id_perfil: number; usuario: string },
   clienteNome?: string,
   perfilNome?: string
 ): Usuario {
@@ -44,7 +36,6 @@ function mapUsuario(
     id_cliente: data.id_cliente,
     id_perfil: data.id_perfil,
     usuario: data.usuario,
-    senha: maskSenha(data.senha),
     cliente_nome: clienteNome,
     perfil_nome: perfilNome,
   };
@@ -52,12 +43,18 @@ function mapUsuario(
 
 export class UsuarioRepository {
   async findAll(): Promise<Usuario[]> {
-    const users = await prismaAny.usuario.findMany({ orderBy: { id_usuario: 'desc' } });
+    const users = await prismaAny.usuario.findMany({
+      orderBy: { id_usuario: 'desc' },
+      select: { id_usuario: true, id_cliente: true, id_perfil: true, usuario: true },
+    });
     return mapUsuariosWithNames(users);
   }
 
   async findById(id: number): Promise<Usuario | null> {
-    const user = await prismaAny.usuario.findUnique({ where: { id_usuario: id } });
+    const user = await prismaAny.usuario.findUnique({
+      where: { id_usuario: id },
+      select: { id_usuario: true, id_cliente: true, id_perfil: true, usuario: true },
+    });
     if (!user) return null;
 
     const [cliente, perfil] = await Promise.all([
@@ -69,7 +66,10 @@ export class UsuarioRepository {
   }
 
   async create(data: CreateUsuarioInput): Promise<Usuario> {
-    const created = await prismaAny.usuario.create({ data });
+    const created = await prismaAny.usuario.create({
+      data,
+      select: { id_usuario: true, id_cliente: true, id_perfil: true, usuario: true },
+    });
 
     const [cliente, perfil] = await Promise.all([
       prismaAny.cliente.findUnique({ where: { id_cliente: created.id_cliente }, select: { nome: true } }),
@@ -83,7 +83,11 @@ export class UsuarioRepository {
     const existing = await prismaAny.usuario.findUnique({ where: { id_usuario: id } });
     if (!existing) return null;
 
-    const updated = await prismaAny.usuario.update({ where: { id_usuario: id }, data });
+    const updated = await prismaAny.usuario.update({
+      where: { id_usuario: id },
+      data,
+      select: { id_usuario: true, id_cliente: true, id_perfil: true, usuario: true },
+    });
 
     const [cliente, perfil] = await Promise.all([
       prismaAny.cliente.findUnique({ where: { id_cliente: updated.id_cliente }, select: { nome: true } }),

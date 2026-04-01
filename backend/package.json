@@ -1,6 +1,6 @@
 {
   "name": "pedido-backend",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Backend API - Buteco do TI",
   "main": "dist/server.js",
   "type": "module",
@@ -27,14 +27,19 @@
   "license": "MIT",
   "dependencies": {
     "@prisma/client": "^5.8.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
-    "helmet": "^7.1.0"
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.11",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.10.6",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",

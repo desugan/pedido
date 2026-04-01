@@ -9,8 +9,6 @@ type Totais = {
   statusCount: Record<string, number>;
 };
 
-const normalizeStatus = (status?: string | null): string => String(status || '').trim().toLowerCase();
-
 function calcularTotais<T extends { status?: string | null }>(dados: T[], valorFn: (item: T) => number): Totais {
   const quantidade = dados.length;
   const valorTotal = dados.reduce((acc, item) => acc + valorFn(item), 0);

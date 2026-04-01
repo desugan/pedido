@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { createHash } from 'crypto';
+import bcrypt from 'bcryptjs';
 import { logLogin } from '../loginLog';
+import { signToken } from '../middleware/auth';
 
 const prisma = new PrismaClient();
 const prismaAny = prisma as any;
@@ -10,7 +12,11 @@ function toMd5(value: string): string {
   return createHash('md5').update(value).digest('hex').toLowerCase();
 }
 
-function isValidSenha(senhaBancoRaw: string, senhaEntradaRaw: string): boolean {
+function looksLikeBcrypt(value: string): boolean {
+  return /^\$2[ab]\$/.test(value);
+}
+
+async function isValidSenha(senhaBancoRaw: string, senhaEntradaRaw: string): Promise<boolean> {
   const senhaBanco = String(senhaBancoRaw || '').trim();
   const senhaEntrada = String(senhaEntradaRaw || '').trim();
 
@@ -18,16 +24,18 @@ function isValidSenha(senhaBancoRaw: string, senhaEntradaRaw: string): boolean {
     return false;
   }
 
+  // New passwords are stored as bcrypt
+  if (looksLikeBcrypt(senhaBanco)) {
+    return bcrypt.compare(senhaEntrada, senhaBanco);
+  }
+
+  // Backward compat: legacy MD5/plain passwords
   const senhaBancoLower = senhaBanco.toLowerCase();
-  const senhaEntradaLower = senhaEntrada.toLowerCase();
   const senhaEntradaMd5 = toMd5(senhaEntrada);
-  const senhaBancoMd5 = toMd5(senhaBanco);
 
   return (
-    senhaBanco === senhaEntrada
-    || senhaBancoLower === senhaEntradaLower
+    senhaBancoLower === senhaEntrada.toLowerCase()
     || senhaBancoLower === senhaEntradaMd5
-    || senhaBancoMd5 === senhaEntradaLower
   );
 }
 
@@ -62,7 +70,7 @@ export class AuthController {
         return;
       }
 
-      const senhaValida = isValidSenha(String(user?.senha || ''), senhaNormalizada);
+      const senhaValida = await isValidSenha(String(user?.senha || ''), senhaNormalizada);
 
       if (!senhaValida) {
         logLogin({ timestamp: new Date().toISOString(), usuario: usuarioNormalizado, status: 'failed', reason: 'Senha incorreta', id_usuario: user.id_usuario, ip });
@@ -75,13 +83,25 @@ export class AuthController {
 
       logLogin({ timestamp: new Date().toISOString(), usuario: usuarioNormalizado, status: 'success', reason: 'Sucesso', id_usuario: user.id_usuario, ip });
 
-      res.json({
+      const userPayload = {
         id_usuario: user.id_usuario,
         usuario: user.usuario,
         id_perfil: user.id_perfil,
-        perfil: perfil?.perfil || null,
         id_cliente: user.id_cliente,
-        cliente_nome: cliente?.nome || null,
+      };
+
+      const token = signToken(userPayload);
+
+      res.json({
+        token,
+        user: {
+          id_usuario: user.id_usuario,
+          usuario: user.usuario,
+          id_perfil: user.id_perfil,
+          perfil: perfil?.perfil || null,
+          id_cliente: user.id_cliente,
+          cliente_nome: cliente?.nome || null,
+        },
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro interno do servidor';
@@ -91,14 +111,19 @@ export class AuthController {
 
   async alterarSenha(req: Request, res: Response): Promise<void> {
     try {
-      const { id_usuario, senhaAtual, novaSenha, confirmarSenha } = req.body as {
-        id_usuario?: number;
+      const id_usuario = req.user?.id_usuario;
+      const { senhaAtual, novaSenha, confirmarSenha } = req.body as {
         senhaAtual?: string;
         novaSenha?: string;
         confirmarSenha?: string;
       };
 
-      if (!id_usuario || !senhaAtual || !novaSenha || !confirmarSenha) {
+      if (!id_usuario) {
+        res.status(401).json({ error: 'Não autenticado' });
+        return;
+      }
+
+      if (!senhaAtual || !novaSenha || !confirmarSenha) {
         res.status(400).json({ error: 'Todos os campos são obrigatórios' });
         return;
       }
@@ -113,7 +138,7 @@ export class AuthController {
         return;
       }
 
-      const user = await prismaAny.usuario.findUnique({ where: { id_usuario: Number(id_usuario) } });
+      const user = await prismaAny.usuario.findUnique({ where: { id_usuario } });
       if (!user) {
         res.status(404).json({ error: 'Usuário não encontrado' });
         return;
@@ -121,15 +146,15 @@ export class AuthController {
 
       const senhaAtualNormalizada = senhaAtual.trim();
 
-      if (!isValidSenha(String(user.senha || ''), senhaAtualNormalizada)) {
+      if (!(await isValidSenha(String(user.senha || ''), senhaAtualNormalizada))) {
         res.status(401).json({ error: 'Senha atual inválida' });
         return;
       }
 
-      const novaSenhaMd5 = toMd5(novaSenha.trim());
+      const novaSenhaHash = await bcrypt.hash(novaSenha.trim(), 12);
       await prismaAny.usuario.update({
-        where: { id_usuario: Number(id_usuario) },
-        data: { senha: novaSenhaMd5 },
+        where: { id_usuario },
+        data: { senha: novaSenhaHash },
       });
 
       res.json({ message: 'Senha alterada com sucesso' });

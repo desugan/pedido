@@ -1,22 +1,12 @@
 import { UsuarioRepository } from '../repositories/UsuarioRepository';
 import { CreateUsuarioInput, Perfil, UpdateUsuarioInput, Usuario } from '../types/usuario';
-import { createHash } from 'crypto';
+import bcrypt from 'bcryptjs';
 
 export class UsuarioService {
   private repository = new UsuarioRepository();
 
-  private toMd5(value: string): string {
-    return createHash('md5').update(value).digest('hex');
-  }
-
-  private looksLikeMd5(value: string): boolean {
-    return /^[a-f0-9]{32}$/i.test(value);
-  }
-
-  private normalizeSenha(value: string): string {
-    const senha = (value || '').trim();
-    if (!senha) return '';
-    return this.looksLikeMd5(senha) ? senha.toLowerCase() : this.toMd5(senha);
+  private async hashSenha(value: string): Promise<string> {
+    return bcrypt.hash(value.trim(), 12);
   }
 
   async getAllUsuarios(): Promise<Usuario[]> {
@@ -34,7 +24,7 @@ export class UsuarioService {
 
     return this.repository.create({
       ...data,
-      senha: this.normalizeSenha(data.senha),
+      senha: await this.hashSenha(data.senha),
     });
   }
 
@@ -44,20 +34,12 @@ export class UsuarioService {
     const existing = await this.repository.findById(id);
     if (!existing) return null;
 
-    const pedidosPendentes = await this.repository.countPedidosPendentesByCliente(existing.id_cliente);
-    if (pedidosPendentes > 0) {
-      await this.repository.updateClienteStatus(existing.id_cliente, 'INADIMPLENTE');
-    }
-
     const payload: UpdateUsuarioInput = { ...data };
 
-    if (typeof payload.senha === 'string') {
-      const normalized = this.normalizeSenha(payload.senha);
-      if (normalized) {
-        payload.senha = normalized;
-      } else {
-        delete payload.senha;
-      }
+    if (typeof payload.senha === 'string' && payload.senha.trim()) {
+      payload.senha = await this.hashSenha(payload.senha);
+    } else {
+      delete payload.senha;
     }
 
     return this.repository.update(id, payload);
@@ -79,7 +61,7 @@ export class UsuarioService {
 
   async resetSenha(id: number): Promise<Usuario | null> {
     if (!id || id <= 0) throw new Error('ID inválido');
-    return this.repository.update(id, { senha: this.toMd5('123456') });
+    return this.repository.update(id, { senha: await this.hashSenha('123456') });
   }
 
   async getPerfis(): Promise<Perfil[]> {

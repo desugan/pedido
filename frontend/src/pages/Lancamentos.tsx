@@ -5,6 +5,8 @@ import { fornecedorService, Fornecedor } from '../services/fornecedorService';
 import { lancamentoService, Lancamento, LancamentoItemData } from '../services/lancamentoService';
 import { produtoService, Produto } from '../services/produtoService';
 
+const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 const Lancamentos: React.FC = () => {
   const [searchParams] = useSearchParams();
   const user = authService.getCurrentUser();
@@ -147,6 +149,7 @@ const Lancamentos: React.FC = () => {
       <h1 className="text-3xl font-bold mb-4">Lançamentos</h1>
       {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
 
+      {isAdmin && (
       <form noValidate onSubmit={submit} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           <select
@@ -237,6 +240,7 @@ const Lancamentos: React.FC = () => {
           Salvar lançamento
         </button>
       </form>
+      )}
 
       <div className="bg-white rounded-2xl shadow overflow-x-auto border border-slate-100">
         <table className="min-w-full">
@@ -247,7 +251,7 @@ const Lancamentos: React.FC = () => {
               <th className="px-4 py-2 text-left">Total</th>
               <th className="px-4 py-2 text-left">Data</th>
               <th className="px-4 py-2 text-left">Status</th>
-              <th className="px-4 py-2 text-left">Ações</th>
+              <th className="px-4 py-2 text-left">Detalhes</th>
             </tr>
           </thead>
           <tbody>
@@ -255,7 +259,7 @@ const Lancamentos: React.FC = () => {
               <tr key={l.id_lancamento} className="border-t">
                 <td className="px-4 py-2">{l.id_lancamento}</td>
                 <td className="px-4 py-2">{l.fornecedor_nome || l.id_fornecedor}</td>
-                <td className="px-4 py-2">{Number(l.total).toFixed(2)}</td>
+                <td className="px-4 py-2">{fmtBRL(Number(l.total))}</td>
                 <td className="px-4 py-2">{new Date(l.data).toLocaleDateString('pt-BR')}</td>
                 <td className="px-4 py-2">{l.status.toUpperCase()}</td>
                 <td className="px-4 py-2">
