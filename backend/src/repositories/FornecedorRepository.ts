@@ -16,7 +16,7 @@ export class FornecedorRepository {
   async findAll(): Promise<Fornecedor[]> {
     try {
       return await prisma.$queryRawUnsafe<Fornecedor[]>(
-        'SELECT id_fornecedor, razao, cnpj, status, data, id_usuario FROM fornecedor ORDER BY id_fornecedor DESC'
+        'SELECT id_fornecedor, razao, cnpj, status, data FROM fornecedor ORDER BY id_fornecedor DESC'
       );
     } catch (error) {
       throw mapDbError(error);
@@ -26,7 +26,7 @@ export class FornecedorRepository {
   async findById(id: number): Promise<Fornecedor | null> {
     try {
       const items = await prisma.$queryRawUnsafe<Fornecedor[]>(
-        'SELECT id_fornecedor, razao, cnpj, status, data, id_usuario FROM fornecedor WHERE id_fornecedor = ?',
+        'SELECT id_fornecedor, razao, cnpj, status, data FROM fornecedor WHERE id_fornecedor = ?',
         id
       );
       return items[0] || null;
@@ -38,12 +38,11 @@ export class FornecedorRepository {
   async create(data: CreateFornecedorInput): Promise<Fornecedor> {
     try {
       await prisma.$executeRawUnsafe(
-        'INSERT INTO fornecedor (razao, cnpj, status, data, id_usuario) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO fornecedor (razao, cnpj, status, data) VALUES (?, ?, ?, ?)',
         data.razao,
-        data.cnpj,
+        data.cnpj ?? null,
         data.status || 'ATIVO',
-        data.data || new Date(),
-        data.id_usuario || null
+        data.data || new Date()
       );
 
       const inserted = await prisma.$queryRawUnsafe<Array<{ id: number }>>('SELECT LAST_INSERT_ID() AS id');
@@ -64,17 +63,15 @@ export class FornecedorRepository {
       cnpj: data.cnpj ?? existing.cnpj,
       status: data.status ?? existing.status,
       data: data.data ?? existing.data,
-      id_usuario: data.id_usuario ?? existing.id_usuario,
     };
 
     try {
       await prisma.$executeRawUnsafe(
-        'UPDATE fornecedor SET razao = ?, cnpj = ?, status = ?, data = ?, id_usuario = ? WHERE id_fornecedor = ?',
+        'UPDATE fornecedor SET razao = ?, cnpj = ?, status = ?, data = ? WHERE id_fornecedor = ?',
         payload.razao,
         payload.cnpj,
         payload.status,
         payload.data,
-        payload.id_usuario,
         id
       );
       return this.findById(id);

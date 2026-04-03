@@ -4,7 +4,6 @@ export interface Fornecedor {
   cnpj: string;
   status: string;
   data?: Date | null;
-  id_usuario?: number | null;
 }
 
 export interface CreateFornecedorInput {
@@ -12,7 +11,6 @@ export interface CreateFornecedorInput {
   cnpj: string;
   status?: string;
   data?: Date;
-  id_usuario?: number;
 }
 
 export interface UpdateFornecedorInput {
@@ -20,5 +18,4 @@ export interface UpdateFornecedorInput {
   cnpj?: string;
   status?: string;
   data?: Date;
-  id_usuario?: number;
 }

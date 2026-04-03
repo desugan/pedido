@@ -23,7 +23,7 @@ const hostIp = process.env.HOST_IP || 'localhost';
 
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-  : ['http://localhost:5173', 'http://localhost:3000'];
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://192.168.0.249:3000', 'http://192.168.0.249:5173'];
 
 // Middleware
 app.use(helmet());

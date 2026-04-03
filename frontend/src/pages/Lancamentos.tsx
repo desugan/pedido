@@ -24,6 +24,7 @@ const Lancamentos: React.FC = () => {
   const [itemAtual, setItemAtual] = useState<LancamentoItemData>({ id_produto: 0, qtd: 1, vlr_item: 0 });
   const [itens, setItens] = useState<LancamentoItemData[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
   const filteredLancamentos = lancamentos.filter((lancamento) => {
     if (!query) return true;
@@ -118,8 +119,22 @@ const Lancamentos: React.FC = () => {
       await lancamentoService.updateStatus(id, status);
       await load();
       setErro(null);
-    } catch {
-      setErro('Erro ao atualizar status do lançamento');
+      setConfirmCancelId(null);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        (err instanceof Error ? err.message : null) ||
+        'Erro ao atualizar status do lançamento';
+      setErro(msg);
+      setConfirmCancelId(null);
+    }
+  };
+
+  const handleCancelarClick = (lancamento: Lancamento) => {
+    if (lancamento.status.toUpperCase() === 'CONFIRMADO') {
+      setConfirmCancelId(lancamento.id_lancamento);
+    } else {
+      void handleUpdateStatus(lancamento.id_lancamento, 'CANCELADO');
     }
   };
 
@@ -341,7 +356,7 @@ const Lancamentos: React.FC = () => {
                 <button
                   type="button"
                   className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold"
-                  onClick={() => handleUpdateStatus(selectedLancamento.id_lancamento, 'CANCELADO')}
+                  onClick={() => handleCancelarClick(selectedLancamento)}
                 >
                   Cancelar
                 </button>
@@ -355,6 +370,36 @@ const Lancamentos: React.FC = () => {
                 onClick={closeLancamentoModal}
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmCancelId !== null && (
+        <div className="pedido-modal-backdrop" onClick={() => setConfirmCancelId(null)}>
+          <div className="pedido-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Cancelar lançamento confirmado?</h3>
+            <p className="text-sm text-slate-600 mb-1">
+              Este lançamento já teve entrada de estoque confirmada.
+            </p>
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+              ⚠️ Se algum produto já foi vendido, o cancelamento será bloqueado para preservar a integridade do estoque.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-semibold"
+                onClick={() => setConfirmCancelId(null)}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+                onClick={() => void handleUpdateStatus(confirmCancelId, 'CANCELADO')}
+              >
+                Confirmar cancelamento
               </button>
             </div>
           </div>

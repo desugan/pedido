@@ -237,6 +237,36 @@ export class LancamentoRepository {
         }
 
         if (nextStatus === 'CANCELADO' && currentStatus === 'CONFIRMADO') {
+          const itensLancamento = await tx.$queryRawUnsafe<Array<{ id_produto: number; produto_nome: string }>>(
+            `SELECT li.id_produto, COALESCE(p.nome, CONCAT('Produto ', li.id_produto)) AS produto_nome
+             FROM lancamento_item li
+             LEFT JOIN produto p ON p.id_produto = li.id_produto
+             WHERE li.id_lancamento = ?`,
+            id
+          );
+
+          if (itensLancamento.length > 0) {
+            const produtoIds = itensLancamento.map((i) => Number(i.id_produto));
+            const placeholders = produtoIds.map(() => '?').join(',');
+
+            const vendidos = await tx.$queryRawUnsafe<Array<{ produto_nome: string }>>(
+              `SELECT DISTINCT COALESCE(p.nome, CONCAT('Produto ', pi.id_produto)) AS produto_nome
+               FROM pedido_item pi
+               LEFT JOIN produto p ON p.id_produto = pi.id_produto
+               LEFT JOIN pedido pd ON pd.id_pedido = pi.id_pedido
+               WHERE pi.id_produto IN (${placeholders})
+                 AND UPPER(pd.status) NOT IN ('CANCELADO')`,
+              ...produtoIds
+            );
+
+            if (vendidos.length > 0) {
+              const nomes = vendidos.map((v) => v.produto_nome).join(', ');
+              throw new Error(
+                `Não é possível cancelar: os seguintes produtos já registraram vendas e o estoque está em uso: ${nomes}`
+              );
+            }
+          }
+
           await this.revertConfirmedStock(tx, id);
         }
 

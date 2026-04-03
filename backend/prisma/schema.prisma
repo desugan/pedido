@@ -46,11 +46,7 @@ model fornecedor {
   cnpj          String?      @db.VarChar(45)
   status        String       @default("ATIVO") @db.VarChar(50)
   data          DateTime?    @db.DateTime(0)
-  id_usuario    Int?
-  usuario       usuario?     @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction, map: "fk_fornecedor_usuario1")
   lancamento    lancamento[]
-
-  @@index([id_usuario], map: "fk_fornecedor_usuario1_idx")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -171,7 +167,6 @@ model usuario {
   id_perfil  Int
   usuario    String       @db.VarChar(255)
   senha      String       @db.VarChar(255)
-  fornecedor fornecedor[]
   lancamento lancamento[]
   cliente    cliente      @relation(fields: [id_cliente], references: [id_cliente], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario_cliente1")
   perfil     perfil       @relation(fields: [id_perfil], references: [id_perfil], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario_perfil1")
