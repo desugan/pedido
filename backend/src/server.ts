@@ -23,14 +23,31 @@ const hostIp = process.env.HOST_IP || 'localhost';
 
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-  : ['http://localhost:5173', 'http://localhost:3000', 'http://192.168.0.249:3000', 'http://192.168.0.249:5173'];
+  : ['http://localhost:5173', 'http://localhost:3000', 'https://pedido.uppermu.com.br', 'https://pedido.uppermu.com.br:5173'];
+
+function isAllowedOrigin(origin: string): boolean {
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    if (parsed.hostname === 'pedido.uppermu.com.br' && parsed.protocol === 'https:') {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
 
 // Middleware
 app.use(helmet());
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // allow requests with no origin (e.g. same-origin, curl, mobile apps)
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -41,15 +58,16 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Global JWT guard — only POST /api/auth/login and /health are public
+// Global JWT guard — only login and health endpoints are public
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (req.path === '/health') return next();
+  if (req.path === '/api/health') return next();
   if (req.path === '/api/auth/login' && req.method === 'POST') return next();
   return requireAuth(req, res, next);
 });
 
 // Health check
-app.get('/health', async (_req: express.Request, res: express.Response) => {
+const healthHandler = async (_req: express.Request, res: express.Response) => {
   let database = false;
 
   try {
@@ -65,7 +83,10 @@ app.get('/health', async (_req: express.Request, res: express.Response) => {
     status: database ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
   });
-});
+};
+
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // Routes
 app.use('/api/clientes', clienteRoutes);

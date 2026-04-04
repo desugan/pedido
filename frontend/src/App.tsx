@@ -92,7 +92,7 @@ function AppContent(): React.ReactElement {
 
     const loadHealth = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/health`);
+        const response = await fetch('/api/health');
         if (!active) return;
 
         const data = (await response.json()) as HealthResponse;

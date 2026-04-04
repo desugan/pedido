@@ -161,6 +161,7 @@ const Pedidos: React.FC = () => {
       setSelectedPedidoItems(items);
       await loadPedidos();
       await loadClientes();
+      await loadProdutos();
       setError(null);
     } catch (err: any) {
       const message = err?.response?.data?.error || 'Erro ao remover item do pedido';
@@ -260,6 +261,7 @@ const Pedidos: React.FC = () => {
       setNewItem({ produtoNome: '', quantidade: 1, precoUnitario: 0 });
       await loadClientes();
       await loadPedidos();
+      await loadProdutos();
       setError(null);
     } catch (err) {
       const message = (err as any)?.response?.data?.error || 'Erro ao criar pedido';
@@ -298,6 +300,7 @@ const Pedidos: React.FC = () => {
       await pedidoService.updatePedidoStatus(id, status);
       await loadPedidos();
       await loadClientes();
+      await loadProdutos();
     } catch (err) {
       setError('Erro ao atualizar status');
       console.error(err);

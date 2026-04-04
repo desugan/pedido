@@ -216,6 +216,9 @@ export class PedidoRepository {
         });
       }
 
+      // Reserve stock immediately after order creation (including pending status).
+      await this.adjustEstoquePedido(tx, created.id_pedido, 'subtract');
+
       // Reserve credit as soon as the order is created.
       await this.adjustSaldoUtilizado(tx, data.clienteId, total, 'add');
 
@@ -263,8 +266,8 @@ export class PedidoRepository {
         );
       }
 
-      const oldReservaEstoque = ['confirmado', 'em_pagamento', 'pago'].includes(oldStatus);
-      const newReservaEstoque = ['confirmado', 'em_pagamento', 'pago'].includes(newStatus);
+      const oldReservaEstoque = ['pendente', 'confirmado', 'em_pagamento', 'pago'].includes(oldStatus);
+      const newReservaEstoque = ['pendente', 'confirmado', 'em_pagamento', 'pago'].includes(newStatus);
 
       if (!oldReservaEstoque && newReservaEstoque) {
         await this.adjustEstoquePedido(tx, id, 'subtract');
@@ -311,7 +314,7 @@ export class PedidoRepository {
         await this.adjustSaldoUtilizado(tx, pedido.id_cliente, total, 'subtract');
       }
 
-      if (['confirmado', 'em_pagamento', 'pago'].includes(status)) {
+      if (['pendente', 'confirmado', 'em_pagamento', 'pago'].includes(status)) {
         await this.adjustEstoquePedido(tx, id, 'add');
       }
 
@@ -366,7 +369,7 @@ export class PedidoRepository {
         await this.adjustSaldoUtilizado(tx, pedidoAtual.id_cliente, subtotalItem, 'add');
       }
 
-      if (['confirmado', 'em_pagamento', 'pago'].includes(status)) {
+      if (['pendente', 'confirmado', 'em_pagamento', 'pago'].includes(status)) {
         const produtoAtual = await tx.produto.findUnique({
           where: { id_produto: produto.id_produto },
           select: { saldo: true },
@@ -422,7 +425,7 @@ export class PedidoRepository {
         await this.adjustSaldoUtilizado(tx, pedido.id_cliente, subtotal, 'subtract');
       }
 
-      if (['confirmado', 'em_pagamento', 'pago'].includes(status)) {
+      if (['pendente', 'confirmado', 'em_pagamento', 'pago'].includes(status)) {
         await tx.produto.update({
           where: { id_produto: item.id_produto },
           data: { saldo: { increment: Number(item.qtd || 0) } },

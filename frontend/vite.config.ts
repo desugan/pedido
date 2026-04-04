@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      allowedHosts: ['pedido.uppermu.com.br'],
       host: true,
       port: frontendPort,
       proxy: {
