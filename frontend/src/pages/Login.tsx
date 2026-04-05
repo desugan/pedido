@@ -41,6 +41,7 @@ const Login: React.FC = () => {
             placeholder="Usuário"
             value={usuario}
             onChange={(e) => setUsuario(e.target.value)}
+            maxLength={255}
             required
           />
           <input
@@ -49,6 +50,7 @@ const Login: React.FC = () => {
             placeholder="Senha"
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
+            maxLength={255}
             required
           />
           <button className="w-full bg-blue-600 text-white rounded-lg p-3 font-semibold" type="submit" disabled={loading}>

@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { pedidoService, Pedido } from '../services/pedidoService';
 
+const formatStatus = (status: string) => String(status || '').replace(/_/g, ' ').trim().toUpperCase();
+
 const ConfirmarPedidos: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -70,7 +72,7 @@ const ConfirmarPedidos: React.FC = () => {
                 <td className="px-4 py-2">{pedido.id}</td>
                 <td className="px-4 py-2">{pedido.clienteId}</td>
                 <td className="px-4 py-2">{pedido.total.toFixed(2)}</td>
-                <td className="px-4 py-2">{pedido.status.toUpperCase()}</td>
+                <td className="px-4 py-2">{formatStatus(pedido.status)}</td>
                 <td className="px-4 py-2">
                   <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => confirmar(pedido.id)}>
                     Confirmar

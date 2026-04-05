@@ -23,6 +23,6 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["backend/src", "frontend/src"],
+  "include": ["frontend/src"],
   "exclude": ["node_modules", "dist"]
 }

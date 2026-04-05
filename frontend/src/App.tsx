@@ -11,7 +11,6 @@ import Fornecedores from './pages/Fornecedores';
 import Lancamentos from './pages/Lancamentos';
 import MudarSenha from './pages/MudarSenha';
 import { authService, AUTH_CHANGED_EVENT } from './services/authService';
-import { API_BASE_URL } from './config/env';
 
 type HealthResponse = {
   api?: boolean;

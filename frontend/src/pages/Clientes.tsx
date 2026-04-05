@@ -49,7 +49,7 @@ const Clientes: React.FC = () => {
       cliente.status,
       String(getLimiteCredito(cliente)),
       String(getSaldoRestante(cliente)),
-      String(cliente.pedido?.length || 0),
+      String((cliente as any).total_pedidos || cliente.pedido?.length || 0),
     ].some((value) => value.toLowerCase().includes(query));
   });
 
@@ -147,69 +147,73 @@ const Clientes: React.FC = () => {
       )}
 
       {showForm && (
-        <div className="bg-white shadow-sm border border-slate-100 rounded-2xl p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">
-            {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
-          </h2>
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome
-                </label>
-                <input
-                  type="text"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
+        <div className="pedido-modal-backdrop" onClick={resetForm}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-semibold mb-4">
+              {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
+            </h2>
+            <form onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nome
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.nome}
+                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    maxLength={150}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="ATIVO">Ativo</option>
+                    <option value="INATIVO">Inativo</option>
+                    <option value="INADIMPLENTE">Inadimplente</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Limite de crédito
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={99999999}
+                    value={formData.limite_credito ?? 0}
+                    onChange={(e) => setFormData({ ...formData, limite_credito: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <div className="flex gap-2 mt-6">
+                <button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
                 >
-                  <option value="ATIVO">Ativo</option>
-                  <option value="INATIVO">Inativo</option>
-                  <option value="INADIMPLENTE">Inadimplente</option>
-                </select>
+                  {editingCliente ? 'Atualizar' : 'Salvar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="btn-cancel-neutral px-4 py-2 rounded-xl font-semibold"
+                >
+                  Cancelar
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Limite de crédito
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={formData.limite_credito ?? 0}
-                  onChange={(e) => setFormData({ ...formData, limite_credito: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <button
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
-              >
-                {editingCliente ? 'Atualizar' : 'Salvar'}
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="btn-cancel-neutral px-4 py-2 rounded-xl font-semibold"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
@@ -217,25 +221,25 @@ const Clientes: React.FC = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 ID
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Nome
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Limite
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Saldo restante
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Pedidos
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Ações
               </th>
             </tr>
@@ -281,7 +285,7 @@ const Clientes: React.FC = () => {
                     className="text-blue-700 font-semibold hover:underline"
                     onClick={() => navigate(`/relatorios?cliente=${cliente.id_cliente}`)}
                   >
-                    {cliente.pedido?.length || 0}
+                    {(cliente as any).total_pedidos || cliente.pedido?.length || 0}
                   </button>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

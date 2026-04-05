@@ -1,23 +1,15 @@
-FROM node:22-alpine
+FROM python:3.12-alpine
 
 WORKDIR /app
 
-# Copy both package files
-COPY backend/package*.json ./backend/
-COPY frontend/package*.json ./frontend/
-
-# Install dependencies
-RUN cd backend && npm ci && cd ../frontend && npm ci
+# Install Python dependencies
+COPY backend_flask/requirements.txt ./backend_flask/requirements.txt
+RUN pip install --no-cache-dir -r backend_flask/requirements.txt
 
 # Copy source code
-COPY backend ./backend
+COPY backend_flask ./backend_flask
 COPY frontend ./frontend
 
-# Build frontend
-RUN cd frontend && npm run build
+EXPOSE 5000
 
-# Expose port
-EXPOSE 3000
-
-# Run backend in development
-CMD ["npm", "run", "dev", "--workspace=backend"]
+CMD ["python3", "backend_flask/run.py"]

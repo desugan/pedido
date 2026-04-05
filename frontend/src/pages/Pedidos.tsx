@@ -7,6 +7,7 @@ import { clienteService } from '../services/clienteService';
 import { Cliente } from '../types';
 
 const fmtBRL = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatDisplayText = (value: string | number | null | undefined) => String(value || '').trim().toUpperCase();
 
 const formatPedidoStatus = (status: string): string => {
   const normalized = String(status || '').trim().toLowerCase().replace(/_/g, ' ');
@@ -30,6 +31,9 @@ const Pedidos: React.FC = () => {
   const [selectedPedidoId, setSelectedPedidoId] = useState<number | null>(null);
   const [selectedPedidoItems, setSelectedPedidoItems] = useState<Array<{ id?: number; produtoNome: string; quantidade: number; precoUnitario: number; subtotal?: number }>>([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ id: number; status: 'confirmado' | 'cancelado' } | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const ITEMS_PER_PAGE = 10;
 
@@ -117,7 +121,7 @@ const Pedidos: React.FC = () => {
 
   const getClienteNome = (clienteId: number): string => {
     const cliente = clientes.find((c) => c.id_cliente === clienteId);
-    return cliente?.nome || `Cliente ${clienteId}`;
+    return formatDisplayText(cliente?.nome || `Cliente ${clienteId}`);
   };
 
   const getPedidoClienteNome = (pedido: Pedido): string => {
@@ -148,24 +152,6 @@ const Pedidos: React.FC = () => {
       setError('Erro ao carregar itens do pedido');
     } finally {
       setDetailsLoading(false);
-    }
-  };
-
-  const handleRemovePedidoItem = async (pedidoId: number, itemId?: number) => {
-    if (!itemId) return;
-    if (!window.confirm('Deseja remover este item do pedido?')) return;
-
-    try {
-      await pedidoService.removeItemFromPedido(pedidoId, itemId);
-      const items = await pedidoService.getItemsByPedidoId(pedidoId);
-      setSelectedPedidoItems(items);
-      await loadPedidos();
-      await loadClientes();
-      await loadProdutos();
-      setError(null);
-    } catch (err: any) {
-      const message = err?.response?.data?.error || 'Erro ao remover item do pedido';
-      setError(message);
     }
   };
 
@@ -263,6 +249,8 @@ const Pedidos: React.FC = () => {
       await loadPedidos();
       await loadProdutos();
       setError(null);
+      setSuccessMessage('Pedido criado com sucesso.');
+      setShowCreateModal(false);
     } catch (err) {
       const message = (err as any)?.response?.data?.error || 'Erro ao criar pedido';
       setError(message);
@@ -301,8 +289,14 @@ const Pedidos: React.FC = () => {
       await loadPedidos();
       await loadClientes();
       await loadProdutos();
+      setPendingAction(null);
+      setSuccessMessage(
+        status === 'confirmado'
+          ? `Pedido #${id} confirmado com sucesso.`
+          : `Pedido #${id} cancelado com sucesso.`
+      );
     } catch (err) {
-      setError('Erro ao atualizar status');
+      setError(`Erro ao ${status === 'confirmado' ? 'confirmar' : 'cancelar'} pedido #${id}.`);
       console.error(err);
     }
   };
@@ -319,6 +313,7 @@ const Pedidos: React.FC = () => {
       </div>
 
       {error && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-4">{error}</div>}
+      {successMessage && <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-4">{successMessage}</div>}
 
       <div className="filter-bar">
         <label className="text-sm font-semibold text-slate-700">Filtrar status:</label>
@@ -335,9 +330,32 @@ const Pedidos: React.FC = () => {
         </select>
       </div>
 
-      <div className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-        <h2 className="text-xl font-semibold mb-3 text-slate-900">Criar novo pedido</h2>
-        <form onSubmit={handleCreatePedido} className="space-y-2">
+      <div className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">Criar novo pedido</h2>
+          <p className="text-sm text-slate-500">A criação agora é feita em modal para manter o fluxo padrão.</p>
+        </div>
+        <button
+          type="button"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl font-semibold"
+          onClick={() => {
+            setError(null);
+            setSuccessMessage(null);
+            setShowCreateModal(true);
+          }}
+        >
+          Novo pedido
+        </button>
+      </div>
+
+      {showCreateModal && (
+        <div className="pedido-modal-backdrop" onClick={() => setShowCreateModal(false)}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-semibold text-slate-900">Criar novo pedido</h2>
+              <button type="button" className="px-3 py-1 rounded-lg bg-slate-200 font-semibold" onClick={() => setShowCreateModal(false)}>Fechar</button>
+            </div>
+            <form onSubmit={handleCreatePedido} className="space-y-2">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
             <select
               value={newPedido.clienteId || ''}
@@ -349,7 +367,7 @@ const Pedidos: React.FC = () => {
               <option value="">{isAdmin ? 'Selecione cliente' : 'Seu cliente'}</option>
               {clientes.map((cliente) => (
                 <option key={cliente.id_cliente} value={cliente.id_cliente}>
-                  {cliente.id_cliente} - {cliente.nome}
+                  {cliente.id_cliente} - {formatDisplayText(cliente.nome)}
                 </option>
               ))}
             </select>
@@ -374,7 +392,7 @@ const Pedidos: React.FC = () => {
               <option value="">Selecione produto</option>
               {produtos.map((produto) => (
                 <option key={produto.id_produto} value={produto.nome}>
-                  {produto.nome} - Saldo: {produto.saldo.toFixed(0)} - Valor: {produto.valor.toFixed(2)}
+                  {formatDisplayText(produto.nome)} - SALDO: {produto.saldo.toFixed(0)} - VALOR: {produto.valor.toFixed(2)}
                 </option>
               ))}
             </select>
@@ -399,6 +417,8 @@ const Pedidos: React.FC = () => {
             <input
               type="number"
               step="0.01"
+              min={0}
+              max={9999999}
               placeholder="Preço"
               value={newItem.precoUnitario}
               readOnly
@@ -418,7 +438,7 @@ const Pedidos: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Cliente</p>
-                <p className="font-semibold text-slate-900">{selectedCliente.nome}</p>
+                <p className="font-semibold text-slate-900">{formatDisplayText(selectedCliente.nome)}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Limite de crédito</p>
@@ -461,15 +481,17 @@ const Pedidos: React.FC = () => {
             ))}
           </div>
 
-          <button
-            type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl mt-2 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!selectedCliente || newPedido.itens.length === 0 || saldoInsuficiente}
-          >
-            Criar pedido
-          </button>
-        </form>
-      </div>
+              <button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl mt-2 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!selectedCliente || newPedido.itens.length === 0 || saldoInsuficiente}
+              >
+                Criar pedido
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div className="w-full bg-white rounded-2xl shadow overflow-x-auto border border-slate-100">
         <table className="min-w-full">
@@ -488,7 +510,7 @@ const Pedidos: React.FC = () => {
             {pagedPedidos.map((pedido) => (
               <tr key={pedido.id} className="border-t">
                 <td className="px-4 py-2">{pedido.id}</td>
-                <td className="px-4 py-2">{isAdmin ? getPedidoClienteNome(pedido) : 'Você'}</td>
+                <td className="px-4 py-2">{isAdmin ? getPedidoClienteNome(pedido) : 'VOCÊ'}</td>
                 <td className="px-4 py-2 text-sm text-slate-500 whitespace-nowrap">{pedido.createdAt ? new Date(pedido.createdAt).toLocaleDateString('pt-BR') : '—'}</td>
                 <td className="px-4 py-2">
                   <button
@@ -504,14 +526,30 @@ const Pedidos: React.FC = () => {
                 {isAdmin && (
                   <td className="px-4 py-2 space-x-2 whitespace-nowrap">
                     <button
-                      onClick={() => handleUpdateStatus(pedido.id, 'confirmado')}
+                      onClick={() => {
+                        setError(null);
+                        setSuccessMessage(null);
+                        if (String(pedido.status || '').trim().toLowerCase() === 'pendente') {
+                          setPendingAction({ id: pedido.id, status: 'confirmado' });
+                        } else {
+                          setError(`Pedido #${pedido.id} não pode ser confirmado pois já está com status ${formatPedidoStatus(pedido.status)}.`);
+                        }
+                      }}
                       className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg font-semibold"
                     >
                       Confirmar
                     </button>
                     <button
-                      onClick={() => handleUpdateStatus(pedido.id, 'cancelado')}
-                      className="bg-amber-500 hover:bg-amber-500 text-white px-3 py-1 rounded-lg font-semibold"
+                      onClick={() => {
+                        setError(null);
+                        setSuccessMessage(null);
+                        if (String(pedido.status || '').trim().toLowerCase() === 'pendente') {
+                          setPendingAction({ id: pedido.id, status: 'cancelado' });
+                        } else {
+                          setError(`Pedido #${pedido.id} não pode ser cancelado pois não está pendente (status: ${formatPedidoStatus(pedido.status)}).`);
+                        }
+                      }}
+                      className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg font-semibold"
                     >
                       Cancelar
                     </button>
@@ -562,6 +600,33 @@ const Pedidos: React.FC = () => {
                 onClick={() => setSelectedPedidoId(null)}
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingAction && (
+        <div className="pedido-modal-backdrop" onClick={() => setPendingAction(null)}>
+          <div className="pedido-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Confirmar ação do pedido</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Deseja realmente {pendingAction.status === 'confirmado' ? 'confirmar' : 'cancelar'} o pedido #{pendingAction.id}?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-semibold"
+                onClick={() => setPendingAction(null)}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                onClick={() => handleUpdateStatus(pendingAction.id, pendingAction.status)}
+              >
+                Confirmar
               </button>
             </div>
           </div>

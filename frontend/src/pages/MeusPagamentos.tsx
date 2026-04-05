@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { pagamentoService, Pagamento } from '../services/pagamentoService';
 import { authService } from '../services/authService';
 
+const formatStatus = (status: string) => String(status || '').replace(/_/g, ' ').trim().toUpperCase();
+
 const MeusPagamentos: React.FC = () => {
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +49,7 @@ const MeusPagamentos: React.FC = () => {
             {pagedPagamentos.map((pagamento) => (
               <tr key={pagamento.id_pagamento} className="border-t">
                 <td className="px-4 py-2">{pagamento.id_pagamento}</td>
-                <td className="px-4 py-2">{pagamento.status.toUpperCase()}</td>
+                <td className="px-4 py-2">{formatStatus(pagamento.status)}</td>
                 <td className="px-4 py-2">{pagamento.valor.toFixed(2)}</td>
               </tr>
             ))}

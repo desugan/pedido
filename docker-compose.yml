@@ -20,26 +20,26 @@ services:
       timeout: 20s
       retries: 10
 
-  app:
+  flask:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pedido-app
+    container_name: pedido-flask
     environment:
-      NODE_ENV: development
+      FLASK_ENV: development
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
-      PORT: 3000
+      PORT: 5000
     ports:
-      - "3000:3000"
+      - "5000:5000"
     depends_on:
       mysql:
         condition: service_healthy
     volumes:
-      - ./backend:/app/backend
+      - ./backend_flask:/app/backend_flask
       - ./frontend:/app/frontend
     networks:
       - pedido-network
-    command: npm run dev --workspace=backend
+    command: python3 backend_flask/run.py
 
 volumes:
   mysql-data:

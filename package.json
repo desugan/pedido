@@ -4,40 +4,30 @@
   "description": "Buteco do TI workspace",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n BACKEND,FRONTEND -c cyan,green \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "dev:backend": "npm --prefix backend run dev",
+    "dev": "concurrently -k -n FLASK,FRONTEND -c cyan,green \"./backend_flask/.venv/bin/python backend_flask/run.py\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "./backend_flask/.venv/bin/python backend_flask/run.py",
     "dev:frontend": "npm --prefix frontend run dev",
-    "build": "npm --prefix backend run build && npm --prefix frontend run build",
-    "test": "npm --prefix backend test"
+    "build": "npm --prefix frontend run build",
+    "test": "./backend_flask/.venv/bin/python -m pytest backend_flask"
   },
   "keywords": [
     "pedidos",
     "api",
-    "typescript"
+    "flask"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@prisma/client": "^5.8.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.18.2",
-    "helmet": "^7.1.0"
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/jest": "^29.5.11",
     "@types/node": "^20.10.6",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",
     "concurrently": "^9.2.1",
     "eslint": "^8.56.0",
-    "jest": "^29.7.0",
     "prettier": "^3.1.1",
     "prettier-plugin-tailwindcss": "^0.5.11",
-    "prisma": "^5.8.0",
-    "ts-jest": "^29.1.1",
-    "tsx": "^4.21.0",
     "typescript": "^5.3.3"
   }
 }

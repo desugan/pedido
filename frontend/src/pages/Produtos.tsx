@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { produtoService, Produto, CreateProdutoData } from '../services/produtoService';
-import axios from 'axios';
 
 const Produtos: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [form, setForm] = useState<CreateProdutoData>({ nome: '', marca: '', valor: 0, saldo: 0 });
   const [editId, setEditId] = useState<number | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
@@ -48,12 +49,14 @@ const Produtos: React.FC = () => {
     e.preventDefault();
     try {
       if (editId) {
-        await produtoService.update(editId, form);
+        await produtoService.update(editId, { nome: form.nome, marca: form.marca });
       } else {
         await produtoService.create(form);
       }
       setForm({ nome: '', marca: '', valor: 0, saldo: 0 });
       setEditId(null);
+      setShowCreateModal(false);
+      setShowEditModal(false);
       setErro(null);
       await load();
     } catch {
@@ -64,55 +67,52 @@ const Produtos: React.FC = () => {
   const editar = (p: Produto) => {
     setEditId(p.id_produto);
     setForm({ nome: p.nome, marca: p.marca, valor: p.valor, saldo: p.saldo });
+    setShowEditModal(true);
   };
 
-  const excluir = async (id: number) => {
-    if (!window.confirm('Excluir produto?')) return;
-    try {
-      await produtoService.delete(id);
-      setErro(null);
-      await load();
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErro(error.response?.data?.error || 'Erro ao excluir produto');
-      } else {
-        setErro('Erro ao excluir produto');
-      }
-    }
-  };
+  const totalProdutos = produtos.length;
+  const totalEstoque = produtos.reduce((acc, p) => acc + Number(p.saldo || 0), 0);
+  const valorEstoque = produtos.reduce((acc, p) => acc + (Number(p.saldo || 0) * Number(p.valor || 0)), 0);
+  const ticketMedio = totalProdutos ? valorEstoque / totalProdutos : 0;
 
   return (
+    <>
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4">Produtos</h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-3xl font-bold">Produtos</h1>
+        <button
+          type="button"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
+          onClick={() => { setEditId(null); setForm({ nome: '', marca: '', valor: 0, saldo: 0 }); setShowCreateModal(true); }}
+        >
+          Novo Produto
+        </button>
+      </div>
       {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
 
-      <form onSubmit={submit} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6 grid grid-cols-1 md:grid-cols-4 gap-2">
-        <input className="border rounded-xl p-2" aria-label="Nome do produto" placeholder="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-        <input className="border rounded-xl p-2" aria-label="Marca" placeholder="Marca" value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} required />
-        <input
-          className="border rounded-xl p-2"
-          aria-label="Valor (R$)"
-          type="number"
-          step="0.01"
-          min={0}
-          placeholder="Valor (R$)"
-          value={form.valor === 0 ? '' : form.valor}
-          onChange={(e) => setForm({ ...form, valor: Number(e.target.value) || 0 })}
-          required
-        />
-        <input
-          className="border rounded-xl p-2"
-          aria-label="Quantidade em estoque"
-          type="number"
-          step="1"
-          min={0}
-          placeholder="Quantidade em estoque"
-          value={form.saldo === 0 ? '' : form.saldo}
-          onChange={(e) => setForm({ ...form, saldo: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
-          required
-        />
-        <button className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-2 md:col-span-4 font-semibold" type="submit">{editId ? 'Atualizar' : 'Salvar'}</button>
-      </form>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Produtos</div>
+          <div className="text-xl font-bold mt-1">{totalProdutos}</div>
+        </div>
+        <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Itens em estoque</div>
+          <div className="text-xl font-bold mt-1">{Math.floor(totalEstoque)}</div>
+        </div>
+        <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Valor em estoque</div>
+          <div className="text-xl font-bold mt-1">R$ {valorEstoque.toFixed(2)}</div>
+        </div>
+        <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+          <div className="text-xs text-slate-500 uppercase tracking-wide">Valor médio por produto</div>
+          <div className="text-xl font-bold mt-1">R$ {ticketMedio.toFixed(2)}</div>
+        </div>
+      </div>
+
+      <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-4">
+        Nesta tela, somente nome e marca podem ser alterados na edição. Valor, saldo e entrada de estoque devem ser feitos em Lançamentos.
+      </div>
+
 
       <div className="bg-white rounded-2xl shadow overflow-x-auto border border-slate-100">
         <table className="min-w-full">
@@ -136,7 +136,6 @@ const Produtos: React.FC = () => {
                 <td className="px-4 py-2">{Math.floor(p.saldo)}</td>
                 <td className="px-4 py-2 space-x-2">
                   <button className="bg-green-600 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => editar(p)}>Editar</button>
-                  <button className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => excluir(p.id_produto)}>Excluir</button>
                 </td>
               </tr>
             ))}
@@ -166,6 +165,72 @@ const Produtos: React.FC = () => {
         </div>
       </div>
     </div>
+
+      {showCreateModal && (
+        <div className="pedido-modal-backdrop" onClick={() => setShowCreateModal(false)}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Novo Produto</h3>
+            <form onSubmit={submit} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} maxLength={255} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Marca</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="Marca" value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} maxLength={255} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
+                  <input className="border rounded-xl p-2 w-full" type="number" step="0.01" min={0} placeholder="0.00" value={form.valor === 0 ? '' : form.valor} onChange={(e) => setForm({ ...form, valor: Number(e.target.value) })} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Saldo inicial</label>
+                  <input className="border rounded-xl p-2 w-full" type="number" step="1" min={0} placeholder="0" value={form.saldo === 0 ? '' : form.saldo} onChange={(e) => setForm({ ...form, saldo: Number(e.target.value) })} />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button type="button" className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-semibold" onClick={() => setShowCreateModal(false)}>Cancelar</button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold">Salvar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && editId !== null && (
+        <div className="pedido-modal-backdrop" onClick={() => { setShowEditModal(false); setEditId(null); }}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Editar Produto</h3>
+            <form onSubmit={submit} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} maxLength={255} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Marca</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="Marca" value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} maxLength={255} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
+                  <input className="border rounded-xl p-2 w-full bg-slate-50" type="number" value={form.valor} readOnly tabIndex={-1} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Saldo</label>
+                  <input className="border rounded-xl p-2 w-full bg-slate-50" type="number" value={form.saldo} readOnly tabIndex={-1} />
+                </div>
+              </div>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Valor e saldo são gerenciados via Lançamentos.</p>
+              <div className="flex gap-2 justify-end mt-4">
+                <button type="button" className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-semibold" onClick={() => { setShowEditModal(false); setEditId(null); }}>Cancelar</button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold">Atualizar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

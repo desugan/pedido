@@ -4,8 +4,17 @@ import { relatorioService, RelatorioResponse } from '../services/relatorioServic
 import { usuarioService, Usuario } from '../services/usuarioService';
 import { authService } from '../services/authService';
 
-const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const fmtDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
+const fmtBRL = (v: unknown) => {
+  const n = Number(v);
+  return (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+const fmtDate = (d: unknown) => {
+  if (!d) return '—';
+  const parsed = new Date(String(d));
+  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString('pt-BR');
+};
+const fmtStatus = (value: unknown) => String(value || '').replace(/_/g, ' ').trim().toUpperCase();
+const fmtName = (value: unknown) => String(value || '').trim().toUpperCase();
 const isCurrencyMetric = (key: string) => /valor|saldo|credito|crédito|limite|faturamento|ticket/i.test(key);
 
 const asNumber = (value: unknown): number => {
@@ -30,17 +39,18 @@ const Relatorios: React.FC = () => {
   useEffect(() => {
     if (isAdmin) {
       usuarioService.getAll().then((list) => {
-        setUsuarios(list);
+        const safeList = Array.isArray(list) ? list : [];
+        setUsuarios(safeList);
         if (clienteParam > 0) {
-          const exists = list.some((u) => u.id_cliente === clienteParam);
+          const exists = safeList.some((u) => u.id_cliente === clienteParam);
           if (exists) {
             setIdClienteSel(clienteParam);
             return;
           }
         }
 
-        if (!idClienteSel && list.length > 0) {
-          setIdClienteSel(list[0].id_cliente);
+        if (!idClienteSel && safeList.length > 0) {
+          setIdClienteSel(safeList[0].id_cliente);
         }
       }).catch(() => {});
       return;
@@ -98,13 +108,22 @@ const Relatorios: React.FC = () => {
   const creditoUtilizado = resultado?.cliente
     ? asNumber((resultado.cliente as any).credito_utilizado ?? clienteFinanceiro?.saldo_utilizado ?? resultado?.totais?.creditoUtilizado)
     : 0;
+  const saldoRestanteFallback = limiteCredito - creditoUtilizado;
   const saldoRestante = resultado?.cliente
-    ? asNumber((resultado.cliente as any).saldo_restante ?? limiteCredito - creditoUtilizado ?? resultado?.totais?.saldoRestante)
+    ? asNumber((resultado.cliente as any).saldo_restante ?? saldoRestanteFallback ?? resultado?.totais?.saldoRestante)
     : 0;
+  const totais = resultado && resultado.totais && typeof resultado.totais === 'object'
+    ? resultado.totais
+    : {};
+  const totalPedidos = asNumber((totais as any).totalPedidos ?? (totais as any).quantidadePedidos ?? pedidosUsuario?.length);
+  const valorTotalPedidos = asNumber((totais as any).valorTotalPedidos ?? (totais as any).valorTotal ?? (pedidosUsuario as any[] | undefined)?.reduce((acc: number, p: any) => acc + Number(p.total || 0), 0));
+  const totalPagamentos = asNumber((totais as any).totalPagamentos ?? (totais as any).quantidadePagamentos ?? pagamentosUsuario?.length);
+  const valorTotalPagamentos = asNumber((totais as any).valorTotalPagamentos ?? (pagamentosUsuario as any[] | undefined)?.reduce((acc: number, p: any) => acc + Number(p.valor || 0), 0));
+
   const totaisEntries = resultado
-    ? Object.entries(resultado.totais).filter(([chave]) => {
-      if (!resultado.cliente) return true;
-      return !['limiteCredito', 'saldoRestante', 'creditoUtilizado'].includes(chave);
+    ? Object.entries(totais).filter(([chave]) => {
+      const explicitFields = ['limiteCredito', 'saldoRestante', 'creditoUtilizado', 'totalPedidos', 'quantidadePedidos', 'valorTotalPedidos', 'totalPagamentos', 'quantidadePagamentos', 'valorTotalPagamentos'];
+      return !explicitFields.includes(chave);
     })
     : [];
 
@@ -137,7 +156,7 @@ const Relatorios: React.FC = () => {
         >
           <option value={0}>Selecione o usuário</option>
           {uniqueClientes.map((u) => (
-            <option key={u.id_cliente} value={u.id_cliente}>{u.usuario} — {u.cliente_nome || `Cliente #${u.id_cliente}`}</option>
+            <option key={u.id_cliente} value={u.id_cliente}>{fmtName(u.usuario)} — {fmtName(u.cliente_nome || `Cliente #${u.id_cliente}`)}</option>
           ))}
         </select>
 
@@ -152,8 +171,8 @@ const Relatorios: React.FC = () => {
         <div className="space-y-6">
           {resultado.cliente && (
             <div className="bg-white rounded-2xl shadow p-5 border border-slate-100">
-              <h2 className="text-xl font-bold mb-1">{resultado.cliente.nome}</h2>
-              <span className="text-sm text-slate-500">Cliente #{resultado.cliente.id_cliente} · Status: {resultado.cliente.status?.toUpperCase()}</span>
+              <h2 className="text-xl font-bold mb-1">{fmtName(resultado.cliente.nome)}</h2>
+              <span className="text-sm text-slate-500">Cliente #{resultado.cliente.id_cliente} · Status: {fmtStatus(resultado.cliente.status)}</span>
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-xl bg-slate-50 px-4 py-3">
                   <div className="text-xs uppercase tracking-wide text-slate-500">Limite de crédito</div>
@@ -174,6 +193,22 @@ const Relatorios: React.FC = () => {
           )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Total de pedidos</div>
+              <div className="text-xl font-bold mt-1">{totalPedidos}</div>
+            </div>
+            <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Valor total dos pedidos</div>
+              <div className="text-xl font-bold mt-1">{fmtBRL(valorTotalPedidos)}</div>
+            </div>
+            <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Total de pagamentos</div>
+              <div className="text-xl font-bold mt-1">{totalPagamentos}</div>
+            </div>
+            <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Valor total dos pagamentos</div>
+              <div className="text-xl font-bold mt-1">{fmtBRL(valorTotalPagamentos)}</div>
+            </div>
             {totaisEntries.map(([chave, valor]) => (
               <div key={chave} className="bg-white rounded-2xl shadow p-4 border border-slate-100">
                 <div className="text-xs text-slate-500 uppercase tracking-wide">{chave.replace(/_/g, ' ')}</div>
@@ -201,7 +236,7 @@ const Relatorios: React.FC = () => {
                       <tr key={p.id_pedido} className="border-t align-top">
                         <td className="px-4 py-2">#{p.id_pedido}</td>
                         <td className="px-4 py-2">{p.data ? fmtDate(p.data) : '—'}</td>
-                        <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
+                        <td className="px-4 py-2 font-semibold">{fmtStatus(p.status)}</td>
                         <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.total)}</td>
                         <td className="px-4 py-2 text-slate-500">{Array.isArray(p.pedido_item) ? p.pedido_item.length : '—'}</td>
                       </tr>
@@ -235,7 +270,7 @@ const Relatorios: React.FC = () => {
                       <tr key={p.id_pagamento} className="border-t align-top">
                         <td className="px-4 py-2">#{p.id_pagamento}</td>
                         <td className="px-4 py-2">{p.data_criacao ? fmtDate(p.data_criacao) : '—'}</td>
-                        <td className="px-4 py-2 font-semibold">{String(p.status || '').toUpperCase()}</td>
+                        <td className="px-4 py-2 font-semibold">{fmtStatus(p.status)}</td>
                         <td className="px-4 py-2 text-right font-mono">{fmtBRL(p.valor)}</td>
                       </tr>
                     ))}

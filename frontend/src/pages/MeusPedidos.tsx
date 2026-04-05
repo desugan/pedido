@@ -17,15 +17,15 @@ const MeusPedidos: React.FC = () => {
     if (!value) return 'Produto';
 
     if (!/[ÃÂ]/.test(value)) {
-      return value;
+      return value.toUpperCase();
     }
 
     try {
       const bytes = Uint8Array.from(value.split('').map((char) => char.charCodeAt(0)));
       const decoded = new TextDecoder('utf-8').decode(bytes);
-      return decoded.includes('�') ? value : decoded;
+      return (decoded.includes('�') ? value : decoded).toUpperCase();
     } catch {
-      return value;
+      return value.toUpperCase();
     }
   };
 
