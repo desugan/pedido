@@ -30,6 +30,15 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: mode === 'development',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+            'ui-vendor': ['qrcode'],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 500,
     },
   };
 });

@@ -1,5 +1,8 @@
 import os
+import logging
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -33,16 +36,28 @@ class Config:
 
     @staticmethod
     def get_jwt_private_key() -> str:
-        if os.path.exists(Config.JWT_PRIVATE_KEY_PATH):
-            with open(Config.JWT_PRIVATE_KEY_PATH, "r") as f:
-                return f.read()
+        import logging
+        logger = logging.getLogger(__name__)
+        key_path = Config.JWT_PRIVATE_KEY_PATH
+        logger.info(f"Looking for private key at: {key_path}, exists: {os.path.exists(key_path)}")
+        if os.path.exists(key_path):
+            content = open(key_path, "r").read()
+            logger.info(f"Private key loaded, length: {len(content)}")
+            return content
+        logger.error(f"Private key NOT FOUND at: {key_path}")
         return ""
 
     @staticmethod
     def get_jwt_public_key() -> str:
-        if os.path.exists(Config.JWT_PUBLIC_KEY_PATH):
-            with open(Config.JWT_PUBLIC_KEY_PATH, "r") as f:
-                return f.read()
+        import logging
+        logger = logging.getLogger(__name__)
+        key_path = Config.JWT_PUBLIC_KEY_PATH
+        logger.info(f"Looking for public key at: {key_path}, exists: {os.path.exists(key_path)}")
+        if os.path.exists(key_path):
+            content = open(key_path, "r").read()
+            logger.info(f"Public key loaded, length: {len(content)}")
+            return content
+        logger.error(f"Public key NOT FOUND at: {key_path}")
         return ""
 
     @staticmethod

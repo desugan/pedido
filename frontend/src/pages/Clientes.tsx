@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { clienteService, CreateClienteData } from '../services/clienteService';
 import { Cliente } from '../types';
+import { usePageToast } from '../components/Toast';
+import { TableSkeleton, Skeleton } from '../components/Skeleton';
 
 const fmtBRL = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -10,7 +12,6 @@ const Clientes: React.FC = () => {
   const navigate = useNavigate();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -19,6 +20,7 @@ const Clientes: React.FC = () => {
     status: 'ATIVO',
     limite_credito: 0,
   });
+  const toast = usePageToast();
 
   const getLimiteCredito = (cliente: Cliente): number => {
     const financeiro = (cliente as any).financeiro;
@@ -78,9 +80,8 @@ const Clientes: React.FC = () => {
       const data = await clienteService.getAllClientes();
       setClientes(data);
       setCurrentPage(1);
-      setError(null);
     } catch (err) {
-      setError('Erro ao carregar clientes');
+      toast.showError('Erro ao carregar clientes');
       console.error('Erro ao carregar clientes:', err);
     } finally {
       setLoading(false);
@@ -97,9 +98,10 @@ const Clientes: React.FC = () => {
       }
       await loadClientes();
       resetForm();
+      toast.showSuccess(editingCliente ? 'Cliente atualizado com sucesso.' : 'Cliente criado com sucesso.');
     } catch (err) {
       const message = (err as any)?.response?.data?.error || 'Erro ao salvar cliente';
-      setError(message);
+      toast.showError(message);
       console.error('Erro ao salvar cliente:', err);
     }
   };
@@ -122,8 +124,12 @@ const Clientes: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-xl">Carregando...</div>
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-5">
+          <Skeleton className="h-9 w-32 mb-2" />
+          <Skeleton className="h-5 w-64" />
+        </div>
+        <TableSkeleton rows={8} />
       </div>
     );
   }
@@ -139,12 +145,6 @@ const Clientes: React.FC = () => {
           Novo Cliente
         </button>
       </div>
-
-      {error && (
-        <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-          {error}
-        </div>
-      )}
 
       {showForm && (
         <div className="pedido-modal-backdrop" onClick={resetForm}>

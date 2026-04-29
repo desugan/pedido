@@ -11,6 +11,7 @@ import Fornecedores from './pages/Fornecedores';
 import Lancamentos from './pages/Lancamentos';
 import MudarSenha from './pages/MudarSenha';
 import { authService, AUTH_CHANGED_EVENT } from './services/authService';
+import { ToastProvider } from './components/Toast';
 
 type HealthResponse = {
   api?: boolean;
@@ -144,7 +145,7 @@ function AppContent(): React.ReactElement {
     : connectionLevel === 'partial'
       ? 'bg-amber-500'
       : 'bg-red-500';
-  const appVersion = 'V1.3';
+  const appVersion = 'V1.5';
   const monthYear = `${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
 
   return (
@@ -332,7 +333,9 @@ function AppContent(): React.ReactElement {
 function App(): React.ReactElement {
   return (
     <Router>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </Router>
   );
 }

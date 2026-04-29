@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 
-from app.db import query_all, query_one, execute, execute_insert
+from app.db import query_all, query_one, execute, execute_insert, transaction, tx_query, tx_one, tx_execute, tx_insert
 
 lancamentos_bp = Blueprint("lancamentos", __name__, url_prefix="/api/lancamentos")
 
@@ -65,66 +65,74 @@ def create_lancamento():
     if not id_fornecedor or not itens:
         return jsonify({"error": "Informe pelo menos um item"}), 400
 
-    total = sum(float(i.get("vlr_total") or (float(i.get("qtd") or 0) * float(i.get("vlr_item") or 0))) for i in itens)
+    try:
+        with transaction() as conn:
+            total = sum(float(i.get("vlr_total") or (float(i.get("qtd") or 0) * float(i.get("vlr_item") or 0))) for i in itens)
 
-    columns_rows = query_all(
-        """
-        SELECT COLUMN_NAME
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lancamento'
-        """
-    )
-    available_columns = {str(r.get("COLUMN_NAME")) for r in columns_rows}
+            columns_rows = tx_query(
+                conn,
+                """
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lancamento'
+                """
+            )
+            available_columns = {str(r.get("COLUMN_NAME")) for r in columns_rows}
 
-    insert_columns = ["id_fornecedor", "total", "data"]
-    insert_values: list = [id_fornecedor, total, "NOW()"]
-    insert_params: list = [id_fornecedor, total]
+            insert_columns = ["id_fornecedor", "total", "data"]
+            insert_values: list = [id_fornecedor, total, "NOW()"]
+            insert_params: list = [id_fornecedor, total]
 
-    if "status" in available_columns:
-        insert_columns.append("status")
-        insert_values.append("%s")
-        insert_params.append(status)
+            if "status" in available_columns:
+                insert_columns.append("status")
+                insert_values.append("%s")
+                insert_params.append(status)
 
-    if "documento" in available_columns:
-        insert_columns.append("documento")
-        insert_values.append("%s")
-        insert_params.append(f"LAN-{int(__import__('time').time())}"[:45])
+            if "documento" in available_columns:
+                insert_columns.append("documento")
+                insert_values.append("%s")
+                insert_params.append(f"LAN-{int(__import__('time').time())}"[:45])
 
-    if "chave" in available_columns:
-        insert_columns.append("chave")
-        insert_values.append("%s")
-        insert_params.append(body.get("chave"))
+            if "chave" in available_columns:
+                insert_columns.append("chave")
+                insert_values.append("%s")
+                insert_params.append(body.get("chave"))
 
-    if "id_usuario" in available_columns:
-        user_row = query_one("SELECT id_usuario FROM usuario ORDER BY id_usuario ASC LIMIT 1")
-        insert_columns.append("id_usuario")
-        insert_values.append("%s")
-        insert_params.append((user_row or {}).get("id_usuario"))
+            if "id_usuario" in available_columns:
+                user_row = tx_one(conn, "SELECT id_usuario FROM usuario ORDER BY id_usuario ASC LIMIT 1")
+                insert_columns.append("id_usuario")
+                insert_values.append("%s")
+                insert_params.append((user_row or {}).get("id_usuario"))
 
-    if "data_lancamento" in available_columns:
-        insert_columns.append("data_lancamento")
-        insert_values.append("NOW()")
+            if "data_lancamento" in available_columns:
+                insert_columns.append("data_lancamento")
+                insert_values.append("NOW()")
 
-    values_sql = []
-    for v in insert_values:
-        values_sql.append(v if v == "NOW()" else "%s")
+            values_sql = []
+            for v in insert_values:
+                values_sql.append(v if v == "NOW()" else "%s")
 
-    lancamento_id = execute_insert(
-        f"INSERT INTO lancamento ({', '.join(insert_columns)}) VALUES ({', '.join(values_sql)})",
-        tuple(insert_params),
-    )
+            lancamento_id = tx_insert(
+                conn,
+                f"INSERT INTO lancamento ({', '.join(insert_columns)}) VALUES ({', '.join(values_sql)})",
+                tuple(insert_params),
+            )
 
-    for item in itens:
-        qtd = float(item.get("qtd") or 0)
-        vlr_item = float(item.get("vlr_item") or 0)
-        vlr_total = float(item.get("vlr_total") or (qtd * vlr_item))
-        execute(
-            "INSERT INTO lancamento_item (id_lancamento, id_produto, qtd, vlr_item, vlr_total) VALUES (%s, %s, %s, %s, %s)",
-            (lancamento_id, item.get("id_produto"), qtd, vlr_item, vlr_total),
-        )
+            for item in itens:
+                qtd = float(item.get("qtd") or 0)
+                vlr_item = float(item.get("vlr_item") or 0)
+                vlr_total = float(item.get("vlr_total") or (qtd * vlr_item))
+                tx_insert(
+                    conn,
+                    "INSERT INTO lancamento_item (id_lancamento, id_produto, qtd, vlr_item, vlr_total) VALUES (%s, %s, %s, %s, %s)",
+                    (lancamento_id, item.get("id_produto"), qtd, vlr_item, vlr_total),
+                )
 
-    if status == "CONFIRMADO":
-        _apply_stock(lancamento_id, "add")
+            if status == "CONFIRMADO":
+                _apply_stock(lancamento_id, "add")
+
+    except Exception as e:
+        return jsonify({"error": f"Erro ao criar lancamento: {str(e)}"}), 500
 
     return get_lancamento(lancamento_id), 201
 
@@ -144,26 +152,34 @@ def update_status(lancamento_id: int):
     if current == "CONFIRMADO" and next_status == "PENDENTE":
         return jsonify({"error": "Não é permitido voltar um lançamento confirmado para pendente. Cancele o lançamento para reverter o estoque."}), 400
 
-    if next_status == "CANCELADO" and current == "CONFIRMADO":
-        vendidos = query_all(
-            """
-            SELECT DISTINCT p.nome AS produto_nome
-            FROM lancamento_item li
-            JOIN pedido_item pi ON pi.id_produto = li.id_produto
-            JOIN pedido pd ON pd.id_pedido = pi.id_pedido
-            LEFT JOIN produto p ON p.id_produto = li.id_produto
-            WHERE li.id_lancamento = %s
-              AND UPPER(pd.status) <> 'CANCELADO'
-            """,
-            (lancamento_id,),
-        )
-        if vendidos:
-            nomes = ", ".join([str(v.get("produto_nome") or "Produto") for v in vendidos])
-            return jsonify({"error": f"Não é possível cancelar: os seguintes produtos já registraram vendas e o estoque está em uso: {nomes}"}), 400
-        _apply_stock(lancamento_id, "subtract")
+    try:
+        with transaction() as conn:
+            if next_status == "CANCELADO" and current == "CONFIRMADO":
+                vendidos = tx_query(
+                    conn,
+                    """
+                    SELECT DISTINCT p.nome AS produto_nome
+                    FROM lancamento_item li
+                    JOIN pedido_item pi ON pi.id_produto = li.id_produto
+                    JOIN pedido pd ON pd.id_pedido = pi.id_pedido
+                    LEFT JOIN produto p ON p.id_produto = li.id_produto
+                    WHERE li.id_lancamento = %s
+                      AND UPPER(pd.status) <> 'CANCELADO'
+                    """,
+                    (lancamento_id,),
+                )
+                if vendidos:
+                    nomes = ", ".join([str(v.get("produto_nome") or "Produto") for v in vendidos])
+                    raise ValueError(f"Não é possível cancelar: os seguintes produtos já registraram vendas e o estoque está em uso: {nomes}")
+                _apply_stock(lancamento_id, "subtract")
 
-    if next_status == "CONFIRMADO" and current != "CONFIRMADO":
-        _apply_stock(lancamento_id, "add")
+            if next_status == "CONFIRMADO" and current != "CONFIRMADO":
+                _apply_stock(lancamento_id, "add")
 
-    execute("UPDATE lancamento SET status = %s WHERE id_lancamento = %s", (next_status, lancamento_id))
+            tx_execute(conn, "UPDATE lancamento SET status = %s WHERE id_lancamento = %s", (next_status, lancamento_id))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Erro ao atualizar status: {str(e)}"}), 500
+
     return get_lancamento(lancamento_id)

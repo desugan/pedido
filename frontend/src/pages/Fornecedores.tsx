@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { fornecedorService, CreateFornecedorData, Fornecedor } from '../services/fornecedorService';
+import { usePageToast } from '../components/Toast';
 
 const Fornecedores: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -9,9 +10,9 @@ const Fornecedores: React.FC = () => {
   const [editId, setEditId] = useState<number | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
+  const toast = usePageToast();
   const filteredFornecedores = fornecedores.filter((fornecedor) => {
     if (!query) return true;
     return [
@@ -33,9 +34,8 @@ const Fornecedores: React.FC = () => {
     try {
       setFornecedores(await fornecedorService.getAll());
       setCurrentPage(1);
-      setErro(null);
     } catch (error) {
-      setErro('Erro ao carregar fornecedores');
+      toast.showError('Erro ao carregar fornecedores');
     }
   };
 
@@ -54,12 +54,12 @@ const Fornecedores: React.FC = () => {
     const cnpj = form.cnpj.trim();
 
     if (!razao || !cnpj) {
-      setErro('Razão social e CNPJ são obrigatórios');
+      toast.showError('Razão social e CNPJ são obrigatórios');
       return;
     }
 
     if (!hasValidCnpjLength(cnpj)) {
-      setErro('CNPJ deve conter 14 números');
+      toast.showError('CNPJ deve conter 14 números');
       return;
     }
 
@@ -74,8 +74,9 @@ const Fornecedores: React.FC = () => {
       setShowCreateModal(false);
       setShowEditModal(false);
       await load();
+      toast.showSuccess(editId ? 'Fornecedor atualizado com sucesso.' : 'Fornecedor criado com sucesso.');
     } catch (error: any) {
-      setErro(error?.response?.data?.error || 'Erro ao salvar fornecedor');
+      toast.showError(error?.response?.data?.error || 'Erro ao salvar fornecedor');
     }
   };
 
@@ -98,7 +99,6 @@ const Fornecedores: React.FC = () => {
           Novo Fornecedor
         </button>
       </div>
-      {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
 
       <div className="bg-white rounded-2xl shadow overflow-x-auto border border-slate-100">
         <table className="min-w-full">

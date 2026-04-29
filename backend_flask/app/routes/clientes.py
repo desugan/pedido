@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 
-from app.db import query_all, query_one, execute, execute_insert
+from app.db import query_all, query_one, execute, execute_insert, transaction, tx_one, tx_execute, tx_insert
 
 clientes_bp = Blueprint("clientes", __name__, url_prefix="/api/clientes")
 
@@ -74,18 +74,24 @@ def create_cliente():
     if not nome:
         return jsonify({"error": "Nome é obrigatório"}), 400
 
-    new_id = execute_insert(
-        "INSERT INTO cliente (nome, status) VALUES (%s, %s)",
-        (nome, status),
-    )
+    try:
+        with transaction() as conn:
+            new_id = tx_insert(
+                conn,
+                "INSERT INTO cliente (nome, status) VALUES (%s, %s)",
+                (nome, status),
+            )
 
-    execute(
-        """
-        INSERT INTO financeiro (id_cliente, limite_credito, saldo_utilizado, ultimo_limite, data_criacao, usuario_alteracao)
-        VALUES (%s, %s, 0, %s, NOW(), 'SISTEMA')
-        """,
-        (new_id, limite, limite),
-    )
+            tx_execute(
+                conn,
+                """
+                INSERT INTO financeiro (id_cliente, limite_credito, saldo_utilizado, ultimo_limite, data_criacao, usuario_alteracao)
+                VALUES (%s, %s, 0, %s, NOW(), 'SISTEMA')
+                """,
+                (new_id, limite, limite),
+            )
+    except Exception as e:
+        return jsonify({"error": f"Erro ao criar cliente: {str(e)}"}), 500
 
     row = query_one(
         """

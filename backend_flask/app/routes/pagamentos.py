@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 
-from app.db import query_all, query_one, execute, execute_insert
+from app.db import query_all, query_one, execute, execute_insert, transaction, tx_query, tx_one, tx_execute, tx_insert
 
 pagamentos_bp = Blueprint("pagamentos", __name__, url_prefix="/api/pagamentos")
 
@@ -226,32 +226,42 @@ def create_pagamento():
     if not pedido_ids:
         return jsonify({"error": "Selecione ao menos um pedido para vincular ao pagamento."}), 400
 
-    if pedido_ids:
-        placeholders, params = _in_clause(pedido_ids)
-        elegiveis = query_all(
-            f"SELECT id_pedido FROM pedido WHERE id_pedido IN ({placeholders}) AND id_cliente = %s AND status = 'confirmado'",
-            params + (int(id_cliente),),
-        )
-        if len(elegiveis) != len(pedido_ids):
-            return jsonify({"error": "Há pedidos inválidos para pagamento (cliente/status)."}), 400
+    try:
+        with transaction() as conn:
+            if pedido_ids:
+                placeholders, params = _in_clause(pedido_ids)
+                elegiveis = tx_query(
+                    conn,
+                    f"SELECT id_pedido FROM pedido WHERE id_pedido IN ({placeholders}) AND id_cliente = %s AND status = 'confirmado'",
+                    params + (int(id_cliente),),
+                )
+                if len(elegiveis) != len(pedido_ids):
+                    raise ValueError("Há pedidos inválidos para pagamento (cliente/status).")
 
-    pagamento_id = execute_insert(
-        "INSERT INTO pagamento (valor, qrcode, chavepix, status, data_criacao, id_cliente) VALUES (%s, %s, %s, %s, NOW(), %s)",
-        (valor, qrcode, chavepix, status, id_cliente),
-    )
+            pagamento_id = tx_insert(
+                conn,
+                "INSERT INTO pagamento (valor, qrcode, chavepix, status, data_criacao, id_cliente) VALUES (%s, %s, %s, %s, NOW(), %s)",
+                (valor, qrcode, chavepix, status, id_cliente),
+            )
 
-    for pedido_id in pedido_ids:
-        execute(
-            "INSERT INTO pagamentopedido (id_pedido, id_pagamento) VALUES (%s, %s)",
-            (pedido_id, pagamento_id),
-        )
+            for pedido_id in pedido_ids:
+                tx_insert(
+                    conn,
+                    "INSERT INTO pagamentopedido (id_pedido, id_pagamento) VALUES (%s, %s)",
+                    (pedido_id, pagamento_id),
+                )
 
-    if pedido_ids:
-        placeholders, params = _in_clause(pedido_ids)
-        execute(
-            f"UPDATE pedido SET status = 'em_pagamento' WHERE id_pedido IN ({placeholders}) AND status = 'confirmado'",
-            params,
-        )
+            if pedido_ids:
+                placeholders, params = _in_clause(pedido_ids)
+                tx_execute(
+                    conn,
+                    f"UPDATE pedido SET status = 'em_pagamento' WHERE id_pedido IN ({placeholders}) AND status = 'confirmado'",
+                    params,
+                )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Erro ao criar pagamento: {str(e)}"}), 500
 
     return get_pagamento(pagamento_id)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from contextlib import contextmanager
 from urllib.parse import urlparse
 from pymysql.connections import Connection
@@ -9,6 +10,8 @@ from queue import Queue, Empty
 from threading import Lock
 
 from .config import Config
+
+logger = logging.getLogger(__name__)
 
 
 def _db_params_from_url(database_url: str) -> dict:
@@ -101,6 +104,23 @@ def get_connection():
         pool.return_connection(conn)
 
 
+@contextmanager
+def transaction():
+    pool = _get_pool()
+    conn = pool._create_connection()
+    conn.autocommit = False
+    try:
+        yield conn
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Transaction rolled back: {type(e).__name__}: {e}")
+        raise
+    finally:
+        conn.autocommit = True
+        pool.return_connection(conn)
+
+
 def query_all(sql: str, params: tuple | list | None = None) -> list[dict]:
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -125,3 +145,25 @@ def execute_insert(sql: str, params: tuple | list | None = None) -> int:
         with conn.cursor() as cur:
             cur.execute(sql, params or ())
             return int(cur.lastrowid)
+
+
+def tx_query(conn: Connection, sql: str, params: tuple | list | None = None) -> list[dict]:
+    with conn.cursor() as cur:
+        cur.execute(sql, params or ())
+        return list(cur.fetchall())
+
+
+def tx_one(conn: Connection, sql: str, params: tuple | list | None = None) -> dict | None:
+    rows = tx_query(conn, sql, params)
+    return rows[0] if rows else None
+
+
+def tx_execute(conn: Connection, sql: str, params: tuple | list | None = None) -> int:
+    with conn.cursor() as cur:
+        return cur.execute(sql, params or ())
+
+
+def tx_insert(conn: Connection, sql: str, params: tuple | list | None = None) -> int:
+    with conn.cursor() as cur:
+        cur.execute(sql, params or ())
+        return int(cur.lastrowid)

@@ -1,6 +1,7 @@
 import api from './api';
 
 export interface CreateItemPedidoData {
+  produtoId?: number;
   produtoNome: string;
   quantidade: number;
   precoUnitario: number;
@@ -14,6 +15,7 @@ export interface CreatePedidoData {
 export interface ItemPedido {
   id?: number;
   pedidoId?: number;
+  produtoId?: number;
   produtoNome: string;
   quantidade: number;
   precoUnitario: number;

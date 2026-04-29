@@ -4,6 +4,7 @@ import { authService } from '../services/authService';
 import { fornecedorService, Fornecedor } from '../services/fornecedorService';
 import { lancamentoService, Lancamento, LancamentoItemData } from '../services/lancamentoService';
 import { produtoService, Produto } from '../services/produtoService';
+import { usePageToast } from '../components/Toast';
 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatDisplayText = (value: string | number | null | undefined) => String(value || '').trim().toUpperCase();
@@ -16,8 +17,6 @@ const Lancamentos: React.FC = () => {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
-  const [erro, setErro] = useState<string | null>(null);
-  const [sucesso, setSucesso] = useState<string | null>(null);
   const [selectedLancamentoId, setSelectedLancamentoId] = useState<number | null>(null);
   const [selectedLancamentoDetails, setSelectedLancamentoDetails] = useState<Lancamento | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -31,6 +30,7 @@ const Lancamentos: React.FC = () => {
   const [confirmLancamentoId, setConfirmLancamentoId] = useState<number | null>(null);
   const [showLancamentoForm, setShowLancamentoForm] = useState(false);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
+  const toast = usePageToast();
   const filteredLancamentos = lancamentos.filter((lancamento) => {
     if (!query) return true;
     return [
@@ -66,9 +66,8 @@ const Lancamentos: React.FC = () => {
       setProdutos(p);
       setLancamentos(l);
       setCurrentPage(1);
-      setErro(null);
     } catch {
-      setErro('Erro ao carregar dados de lançamentos');
+      toast.showError('Erro ao carregar dados de lançamentos');
     }
   };
 
@@ -82,13 +81,12 @@ const Lancamentos: React.FC = () => {
 
   const addItem = () => {
     if (!itemAtual.id_produto || itemAtual.qtd <= 0 || itemAtual.vlr_item <= 0) {
-      setErro('Informe produto, quantidade e valor válidos');
+      toast.showError('Informe produto, quantidade e valor válidos');
       return;
     }
 
     setItens([...itens, { ...itemAtual, vlr_total: itemAtual.qtd * itemAtual.vlr_item }]);
     setItemAtual({ id_produto: 0, qtd: 1, vlr_item: 0 });
-    setErro(null);
   };
 
   const removeItem = (index: number) => {
@@ -99,7 +97,7 @@ const Lancamentos: React.FC = () => {
     e.preventDefault();
 
     if (!idFornecedor || !itens.length) {
-      setErro('Selecione um fornecedor e ao menos um item');
+      toast.showError('Selecione um fornecedor e ao menos um item');
       return;
     }
 
@@ -115,9 +113,9 @@ const Lancamentos: React.FC = () => {
       setIdFornecedor(0);
       setShowLancamentoForm(false);
       await load();
-      setSucesso('Lançamento criado com sucesso.');
+      toast.showSuccess('Lançamento criado com sucesso.');
     } catch {
-      setErro('Erro ao salvar lançamento');
+      toast.showError('Erro ao salvar lançamento');
     }
   };
 
@@ -125,17 +123,18 @@ const Lancamentos: React.FC = () => {
     try {
       await lancamentoService.updateStatus(id, status);
       await load();
-      setErro(null);
-      setSucesso('Status do lançamento atualizado.');
+      toast.showSuccess('Status do lançamento atualizado.');
       setConfirmCancelId(null);
+      setConfirmLancamentoId(null);
       closeLancamentoModal();
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
         (err instanceof Error ? err.message : null) ||
         'Erro ao atualizar status do lançamento';
-      setErro(msg);
+      toast.showError(msg);
       setConfirmCancelId(null);
+      setConfirmLancamentoId(null);
     }
   };
 
@@ -156,7 +155,7 @@ const Lancamentos: React.FC = () => {
       const details = await lancamentoService.getById(id);
       setSelectedLancamentoDetails(details);
     } catch {
-      setErro('Erro ao carregar itens do lançamento');
+      toast.showError('Erro ao carregar itens do lançamento');
     } finally {
       setDetailsLoading(false);
     }
@@ -182,8 +181,6 @@ const Lancamentos: React.FC = () => {
           </button>
         )}
       </div>
-      {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
-      {sucesso && <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3">{sucesso}</div>}
 
       {isAdmin && showLancamentoForm && (
         <div className="pedido-modal-backdrop" onClick={() => setShowLancamentoForm(false)}>
@@ -369,7 +366,7 @@ const Lancamentos: React.FC = () => {
               )}
             </div>
 
-            {isAdmin && (
+            {isAdmin && String(selectedLancamento.status || '').trim().toUpperCase() !== 'CANCELADO' && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {String(selectedLancamento.status || '').trim().toUpperCase() !== 'CONFIRMADO' && (
                   <button

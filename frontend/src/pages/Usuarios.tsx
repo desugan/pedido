@@ -4,6 +4,7 @@ import { usuarioService, Usuario, Perfil, CreateUsuarioData } from '../services/
 import { clienteService } from '../services/clienteService';
 import { Cliente } from '../types';
 import api from '../services/api';
+import { usePageToast } from '../components/Toast';
 
 interface LoginLogEntry {
   timestamp: string;
@@ -25,8 +26,6 @@ const Usuarios: React.FC = () => {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [perfis, setPerfis] = useState<Perfil[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [erro, setErro] = useState<string | null>(null);
-  const [sucesso, setSucesso] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<CreateUsuarioData>({ id_cliente: 0, id_perfil: 0, usuario: '', senha: '' });
@@ -34,6 +33,7 @@ const Usuarios: React.FC = () => {
   const [loginLog, setLoginLog] = useState<LoginLogEntry[]>([]);
   const [showLog, setShowLog] = useState(false);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
+  const toast = usePageToast();
   const filteredUsuarios = usuarios.filter((usuario) => {
     if (!query) return true;
     return [
@@ -62,9 +62,8 @@ const Usuarios: React.FC = () => {
       setPerfis(p);
       setClientes(c);
       setCurrentPage(1);
-      setErro(null);
     } catch {
-      setErro('Erro ao carregar dados de usuários');
+      toast.showError('Erro ao carregar dados de usuários');
     }
   };
 
@@ -74,7 +73,7 @@ const Usuarios: React.FC = () => {
       setLoginLog(res.data);
       setShowLog(true);
     } catch {
-      setErro('Erro ao carregar log de login');
+      toast.showError('Erro ao carregar log de login');
     }
   };
 
@@ -103,7 +102,7 @@ const Usuarios: React.FC = () => {
         await usuarioService.update(editId, updatePayload);
       } else {
         if (!form.senha.trim()) {
-          setErro('Senha é obrigatória para novo usuário');
+          toast.showError('Senha é obrigatória para novo usuário');
           return;
         }
 
@@ -112,10 +111,10 @@ const Usuarios: React.FC = () => {
       setForm({ id_cliente: 0, id_perfil: 0, usuario: '', senha: '' });
       setEditId(null);
       setShowForm(false);
-      setSucesso('Usuário salvo com sucesso.');
+      toast.showSuccess('Usuário salvo com sucesso.');
       await load();
     } catch (err: any) {
-      setErro(err?.response?.data?.error || 'Erro ao salvar usuário');
+      toast.showError(err?.response?.data?.error || 'Erro ao salvar usuário');
     }
   };
 
@@ -129,8 +128,6 @@ const Usuarios: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-4">Usuários</h1>
-      {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
-      {sucesso && <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3">{sucesso}</div>}
 
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold text-slate-900">Cadastro de usuários</h2>

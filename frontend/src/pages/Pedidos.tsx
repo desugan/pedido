@@ -5,6 +5,8 @@ import { produtoService, Produto } from '../services/produtoService';
 import { authService } from '../services/authService';
 import { clienteService } from '../services/clienteService';
 import { Cliente } from '../types';
+import { usePageToast } from '../components/Toast';
+import { TableSkeleton, Skeleton } from '../components/Skeleton';
 
 const fmtBRL = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatDisplayText = (value: string | number | null | undefined) => String(value || '').trim().toUpperCase();
@@ -20,10 +22,10 @@ const Pedidos: React.FC = () => {
   const user = authService.getCurrentUser();
   const isAdmin = user?.id_perfil === 1;
   const currentClienteId = user?.id_cliente ?? 0;
+  const toast = usePageToast();
 
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -33,7 +35,6 @@ const Pedidos: React.FC = () => {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ id: number; status: 'confirmado' | 'cancelado' } | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const ITEMS_PER_PAGE = 10;
 
@@ -93,8 +94,20 @@ const Pedidos: React.FC = () => {
     ].some((value) => value.toLowerCase().includes(query));
   });
 
+  const getSaldoDisponivel = (produtoId: number): number => {
+    const produto = produtos.find(p => p.id_produto === produtoId);
+    const saldoBase = produto ? Number(produto.saldo) : 0;
+    const itensNaSacola = newPedido.itens.filter(item => {
+      const itemProduto = produtos.find(p => p.id_produto === produtoId);
+      return itemProduto && item.produtoNome === itemProduto.nome;
+    });
+    const subtraido = itensNaSacola.reduce((acc, item) => acc + item.quantidade, 0);
+    return Math.max(0, saldoBase - subtraido);
+  };
+
   const produtoSelecionado = produtos.find((p) => p.nome === newItem.produtoNome);
-  const maxQuantidade = produtoSelecionado ? Math.max(1, Math.floor(produtoSelecionado.saldo)) : 1;
+  const saldoDisponivel = produtoSelecionado ? getSaldoDisponivel(produtoSelecionado.id_produto) : 0;
+  const maxQuantidade = saldoDisponivel;
   const totalPages = Math.max(1, Math.ceil(filteredPedidos.length / ITEMS_PER_PAGE));
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const pagedPedidos = filteredPedidos.slice(startIndex, startIndex + ITEMS_PER_PAGE);
@@ -149,7 +162,7 @@ const Pedidos: React.FC = () => {
       const items = await pedidoService.getItemsByPedidoId(pedidoId);
       setSelectedPedidoItems(items);
     } catch (err) {
-      setError('Erro ao carregar itens do pedido');
+      toast.showError('Erro ao carregar itens do pedido');
     } finally {
       setDetailsLoading(false);
     }
@@ -163,6 +176,12 @@ const Pedidos: React.FC = () => {
     loadProdutos();
     loadClientes();
   }, []);
+
+  useEffect(() => {
+    if (showCreateModal) {
+      loadProdutos();
+    }
+  }, [showCreateModal]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -183,9 +202,8 @@ const Pedidos: React.FC = () => {
       setCurrentPage(1);
       setSelectedPedidoId(null);
       setSelectedPedidoItems([]);
-      setError(null);
     } catch (err) {
-      setError('Erro ao carregar pedidos');
+      toast.showError('Erro ao carregar pedidos');
       console.error(err);
     } finally {
       setLoading(false);
@@ -195,9 +213,9 @@ const Pedidos: React.FC = () => {
   const loadProdutos = async () => {
     try {
       const data = await produtoService.getAll();
-      setProdutos(data.filter((produto) => produto.saldo > 0));
+      setProdutos(data);
     } catch (err) {
-      setError('Erro ao carregar produtos');
+      toast.showError('Erro ao carregar produtos');
       console.error(err);
     }
   };
@@ -219,7 +237,7 @@ const Pedidos: React.FC = () => {
       const data = await clienteService.getAllClientes();
       setClientes(data);
     } catch (err) {
-      setError('Erro ao carregar clientes');
+      toast.showError('Erro ao carregar clientes');
       console.error(err);
     }
   };
@@ -229,12 +247,12 @@ const Pedidos: React.FC = () => {
     const clienteId = isAdmin ? newPedido.clienteId : currentClienteId;
 
     if (clienteId <= 0 || newPedido.itens.length === 0) {
-      setError('Informe cliente e pelo menos um item');
+      toast.showError('Informe cliente e pelo menos um item');
       return;
     }
 
     if (selectedCliente && saldoInsuficiente) {
-      setError(`Saldo restante insuficiente. Disponível: ${fmtBRL(saldoRestanteCliente)} | Pedido: ${fmtBRL(totalNovoPedido)}`);
+      toast.showError(`Saldo restante insuficiente. Disponível: ${fmtBRL(saldoRestanteCliente)} | Pedido: ${fmtBRL(totalNovoPedido)}`);
       return;
     }
 
@@ -248,36 +266,37 @@ const Pedidos: React.FC = () => {
       await loadClientes();
       await loadPedidos();
       await loadProdutos();
-      setError(null);
-      setSuccessMessage('Pedido criado com sucesso.');
+      toast.showSuccess('Pedido criado com sucesso.');
       setShowCreateModal(false);
     } catch (err) {
       const message = (err as any)?.response?.data?.error || 'Erro ao criar pedido';
-      setError(message);
+      toast.showError(message);
       console.error(err);
     }
   };
 
-  const handleAddItem = () => {
+  const handleAddItem = async () => {
     if (!newItem.produtoNome || newItem.quantidade <= 0 || newItem.precoUnitario <= 0) {
-      setError('Item inválido');
+      toast.showError('Item inválido');
       return;
     }
 
     const produtoSelecionado = produtos.find((p) => p.nome === newItem.produtoNome);
     if (!produtoSelecionado) {
-      setError('Selecione um produto válido');
+      toast.showError('Selecione um produto válido');
       return;
     }
 
-    if (newItem.quantidade > produtoSelecionado.saldo) {
-      setError(`Saldo insuficiente para o produto ${produtoSelecionado.nome}`);
+    const saldoReal = getSaldoDisponivel(produtoSelecionado.id_produto);
+
+    if (newItem.quantidade > saldoReal) {
+      toast.showError(`Saldo insuficiente para ${produtoSelecionado.nome}. Disponível: ${saldoReal}`);
       return;
     }
 
     setNewPedido({
       ...newPedido,
-      itens: [...newPedido.itens, newItem],
+      itens: [...newPedido.itens, { ...newItem, produtoId: produtoSelecionado.id_produto }],
     });
 
     setNewItem({ produtoNome: '', quantidade: 1, precoUnitario: 0 });
@@ -285,24 +304,36 @@ const Pedidos: React.FC = () => {
 
   const handleUpdateStatus = async (id: number, status: string) => {
     try {
+      console.log(`Atualizando pedido ${id} para status: ${status}`);
       await pedidoService.updatePedidoStatus(id, status);
+      console.log('Pedido atualizado, recarregando dados...');
       await loadPedidos();
       await loadClientes();
       await loadProdutos();
+      console.log('Dados recarregados');
       setPendingAction(null);
-      setSuccessMessage(
+      toast.showSuccess(
         status === 'confirmado'
           ? `Pedido #${id} confirmado com sucesso.`
           : `Pedido #${id} cancelado com sucesso.`
       );
     } catch (err) {
-      setError(`Erro ao ${status === 'confirmado' ? 'confirmar' : 'cancelar'} pedido #${id}.`);
+      toast.showError(`Erro ao ${status === 'confirmado' ? 'confirmar' : 'cancelar'} pedido #${id}.`);
       console.error(err);
     }
   };
 
   if (loading) {
-    return <div className="p-6">Carregando pedidos...</div>;
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-5">
+          <Skeleton className="h-9 w-32 mb-2" />
+          <Skeleton className="h-5 w-64" />
+        </div>
+        <Skeleton className="h-10 w-40 mb-6" />
+        <TableSkeleton rows={8} />
+      </div>
+    );
   }
 
   return (
@@ -312,22 +343,31 @@ const Pedidos: React.FC = () => {
         <p className="text-sm text-slate-500 mt-1">Gerencie pedidos com visualização detalhada por modal.</p>
       </div>
 
-      {error && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-4">{error}</div>}
-      {successMessage && <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-4">{successMessage}</div>}
-
       <div className="filter-bar">
-        <label className="text-sm font-semibold text-slate-700">Filtrar status:</label>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="filter-select border rounded-xl px-3 py-2 bg-white"
-        >
-          <option value="">Todos</option>
-          <option value="confirmado">Confirmado</option>
-          <option value="em_pagamento">Em pagamento</option>
-          <option value="pago">Pago</option>
-          <option value="cancelado">Cancelado</option>
-        </select>
+        <span className="text-sm font-semibold text-slate-700">Status:</span>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { value: '', label: 'Todos' },
+            { value: 'pendente', label: 'Pendente' },
+            { value: 'confirmado', label: 'Confirmado' },
+            { value: 'em_pagamento', label: 'Em pagamento' },
+            { value: 'pago', label: 'Pago' },
+            { value: 'cancelado', label: 'Cancelado' },
+          ].map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => setStatusFilter(item.value)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                statusFilter === item.value
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between gap-3 flex-wrap">
@@ -339,8 +379,6 @@ const Pedidos: React.FC = () => {
           type="button"
           className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl font-semibold"
           onClick={() => {
-            setError(null);
-            setSuccessMessage(null);
             setShowCreateModal(true);
           }}
         >
@@ -382,17 +420,19 @@ const Pedidos: React.FC = () => {
                   produtoNome,
                   precoUnitario: produtoEscolhido?.valor ?? 0,
                   quantidade:
-                    produtoEscolhido && newItem.quantidade > produtoEscolhido.saldo
-                      ? Math.max(1, Math.floor(produtoEscolhido.saldo))
+                    produtoEscolhido && newItem.quantidade > Number(produtoEscolhido.saldo)
+                      ? Math.max(1, Math.floor(Number(produtoEscolhido.saldo)))
                       : newItem.quantidade,
                 });
               }}
               className="border rounded-xl p-2 md:col-span-5 bg-white"
             >
               <option value="">Selecione produto</option>
-              {produtos.map((produto) => (
+              {produtos
+                .filter((produto) => getSaldoDisponivel(produto.id_produto) > 0)
+                .map((produto) => (
                 <option key={produto.id_produto} value={produto.nome}>
-                  {formatDisplayText(produto.nome)} - SALDO: {produto.saldo.toFixed(0)} - VALOR: {produto.valor.toFixed(2)}
+                  {formatDisplayText(produto.nome)} - SALDO: {getSaldoDisponivel(produto.id_produto).toFixed(0)} - VALOR: {Number(produto.valor).toFixed(2)}
                 </option>
               ))}
             </select>
@@ -401,14 +441,16 @@ const Pedidos: React.FC = () => {
               type="number"
               step="1"
               min={1}
-              max={maxQuantidade}
+              max={maxQuantidade > 0 ? maxQuantidade : undefined}
               placeholder="Qtd"
               value={newItem.quantidade}
+              disabled={!produtoSelecionado || maxQuantidade <= 0}
               onChange={(e) => {
                 const value = Number(e.target.value);
+                const max = maxQuantidade > 0 ? maxQuantidade : 1;
                 const quantidadeNormalizada = Number.isNaN(value)
                   ? 1
-                  : Math.min(Math.max(1, Math.floor(value)), maxQuantidade);
+                  : Math.min(Math.max(1, Math.floor(value)), max);
                 setNewItem({ ...newItem, quantidade: quantidadeNormalizada });
               }}
               className="border rounded-xl p-2 md:col-span-1 bg-white"
@@ -527,12 +569,10 @@ const Pedidos: React.FC = () => {
                   <td className="px-4 py-2 space-x-2 whitespace-nowrap">
                     <button
                       onClick={() => {
-                        setError(null);
-                        setSuccessMessage(null);
                         if (String(pedido.status || '').trim().toLowerCase() === 'pendente') {
                           setPendingAction({ id: pedido.id, status: 'confirmado' });
                         } else {
-                          setError(`Pedido #${pedido.id} não pode ser confirmado pois já está com status ${formatPedidoStatus(pedido.status)}.`);
+                          toast.showError(`Pedido #${pedido.id} não pode ser confirmado pois já está com status ${formatPedidoStatus(pedido.status)}.`);
                         }
                       }}
                       className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg font-semibold"
@@ -541,12 +581,10 @@ const Pedidos: React.FC = () => {
                     </button>
                     <button
                       onClick={() => {
-                        setError(null);
-                        setSuccessMessage(null);
                         if (String(pedido.status || '').trim().toLowerCase() === 'pendente') {
                           setPendingAction({ id: pedido.id, status: 'cancelado' });
                         } else {
-                          setError(`Pedido #${pedido.id} não pode ser cancelado pois não está pendente (status: ${formatPedidoStatus(pedido.status)}).`);
+                          toast.showError(`Pedido #${pedido.id} não pode ser cancelado pois não está pendente (status: ${formatPedidoStatus(pedido.status)}).`);
                         }
                       }}
                       className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg font-semibold"

@@ -5,6 +5,7 @@ import { pagamentoService, Pagamento } from '../services/pagamentoService';
 import { authService } from '../services/authService';
 import { pedidoService, Pedido } from '../services/pedidoService';
 import { configService } from '../services/configService';
+import { usePageToast } from '../components/Toast';
 
 const Pagamentos: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -13,7 +14,6 @@ const Pagamentos: React.FC = () => {
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
   const [pedidosConfirmados, setPedidosConfirmados] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPedidoIds, setSelectedPedidoIds] = useState<number[]>([]);
@@ -23,7 +23,6 @@ const Pagamentos: React.FC = () => {
   const [pixNomeInput, setPixNomeInput] = useState('');
   const [savingPixKey, setSavingPixKey] = useState(false);
   const [savingPixNome, setSavingPixNome] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showPayModal, setShowPayModal] = useState(false);
   const [showPixConfigModal, setShowPixConfigModal] = useState(false);
   const [pendingPagamentoConfirmId, setPendingPagamentoConfirmId] = useState<number | null>(null);
@@ -33,6 +32,7 @@ const Pagamentos: React.FC = () => {
   const [viewPagamento, setViewPagamento] = useState<Pagamento | null>(null);
   const [localPaymentPedidos, setLocalPaymentPedidos] = useState<Record<number, Pedido[]>>({});
   const [viewQrCode, setViewQrCode] = useState('');
+  const toast = usePageToast();
   const [qrPreview, setQrPreview] = useState('');
   const [pixCopiaCola, setPixCopiaCola] = useState('');
   const viewPedidosItens = viewPedidos.flatMap((pedido) =>
@@ -159,7 +159,7 @@ const Pagamentos: React.FC = () => {
       const confirmados = pedidosDoCliente.filter((pedido) => String(pedido.status || '').toLowerCase() === 'confirmado');
       setPedidosConfirmados(confirmados);
     } catch (err) {
-      setError('Erro ao carregar pedidos confirmados');
+      toast.showError('Erro ao carregar pedidos confirmados');
       console.error(err);
     }
   };
@@ -291,7 +291,7 @@ const Pagamentos: React.FC = () => {
 
   const handleSavePixKey = async () => {
     if (!isValidPixKeyFormat(pixKeyInput)) {
-      setError('Formato de chave PIX inválido (use CPF, CNPJ, email, telefone +55 ou chave aleatória)');
+      toast.showError('Formato de chave PIX inválido (use CPF, CNPJ, email, telefone +55 ou chave aleatória)');
       return;
     }
 
@@ -299,11 +299,10 @@ const Pagamentos: React.FC = () => {
       setSavingPixKey(true);
       const saved = await configService.setPixKey(pixKeyInput);
       setPixKey(saved);
-      setError(null);
       setShowPixConfigModal(false);
-      setSuccessMessage('Chave PIX salva com sucesso.');
+      toast.showSuccess('Chave PIX salva com sucesso.');
     } catch (err) {
-      setError('Erro ao salvar chave PIX');
+      toast.showError('Erro ao salvar chave PIX');
       console.error(err);
     } finally {
       setSavingPixKey(false);
@@ -313,7 +312,7 @@ const Pagamentos: React.FC = () => {
   const handleSavePixNome = async () => {
     const nome = pixNomeInput.trim();
     if (!nome) {
-      setError('Nome PIX é obrigatório');
+      toast.showError('Nome PIX é obrigatório');
       return;
     }
 
@@ -321,11 +320,10 @@ const Pagamentos: React.FC = () => {
       setSavingPixNome(true);
       const saved = await configService.setPixNome(nome);
       setPixNome(saved);
-      setError(null);
       setShowPixConfigModal(false);
-      setSuccessMessage('Nome PIX salvo com sucesso.');
+      toast.showSuccess('Nome PIX salvo com sucesso.');
     } catch (err) {
-      setError('Erro ao salvar nome PIX');
+      toast.showError('Erro ao salvar nome PIX');
       console.error(err);
     } finally {
       setSavingPixNome(false);
@@ -394,9 +392,8 @@ const Pagamentos: React.FC = () => {
 
       setPagamentos(filtered);
       setCurrentPage(1);
-      setError(null);
     } catch (err) {
-      setError('Erro ao carregar pagamentos');
+      toast.showError('Erro ao carregar pagamentos');
       console.error(err);
     } finally {
       setLoading(false);
@@ -407,18 +404,18 @@ const Pagamentos: React.FC = () => {
     e.preventDefault();
 
     if (!pixKey) {
-      setError('Chave PIX não configurada');
+      toast.showError('Chave PIX não configurada');
       return;
     }
 
     try {
       if (!user?.id_cliente) {
-        setError('Usuário sem cliente associado');
+        toast.showError('Usuário sem cliente associado');
         return;
       }
 
       if (!selectedPedidoIds.length) {
-        setError('Selecione ao menos um pedido confirmado');
+        toast.showError('Selecione ao menos um pedido confirmado');
         return;
       }
 
@@ -445,10 +442,9 @@ const Pagamentos: React.FC = () => {
       await loadPagamentos();
       await loadPedidosConfirmados();
       await openPedidosModal(createdPagamento, selectedPedidosSnapshot);
-      setError(null);
-      setSuccessMessage('Pagamento criado com sucesso.');
+      toast.showSuccess('Pagamento criado com sucesso.');
     } catch (err) {
-      setError('Erro ao criar pagamento');
+      toast.showError('Erro ao criar pagamento');
       console.error(err);
     }
   };
@@ -457,13 +453,13 @@ const Pagamentos: React.FC = () => {
     try {
       await pagamentoService.updatePagamentoStatus(id, status);
       void loadPagamentos();
-      setSuccessMessage(
+      toast.showSuccess(
         status === 'aprovado'
           ? `Pagamento #${id} confirmado com sucesso.`
           : `Pagamento #${id} atualizado com sucesso.`
       );
     } catch (err) {
-      setError(`Erro ao confirmar pagamento #${id}.`);
+      toast.showError(`Erro ao confirmar pagamento #${id}.`);
       console.error(err);
     }
   };
@@ -553,7 +549,7 @@ const Pagamentos: React.FC = () => {
       setViewPedidos(details);
     } catch (err) {
       console.error(err);
-      setError('Erro ao carregar pedidos vinculados ao pagamento');
+      toast.showError('Erro ao carregar pedidos vinculados ao pagamento');
     } finally {
       setViewLoading(false);
     }
@@ -567,21 +563,29 @@ const Pagamentos: React.FC = () => {
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-4">Pagamentos</h1>
 
-      {error && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-4">{error}</div>}
-      {successMessage && <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-4">{successMessage}</div>}
-
       <div className="filter-bar">
-        <label className="text-sm font-semibold text-slate-700">Filtrar status:</label>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="filter-select border rounded-xl px-3 py-2 bg-white"
-        >
-          <option value="">Todos</option>
-          <option value="pendente">Abertos</option>
-          <option value="aprovado">Confirmados</option>
-          <option value="excluido">Excluídos</option>
-        </select>
+        <span className="text-sm font-semibold text-slate-700">Status:</span>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { value: '', label: 'Todos' },
+            { value: 'pendente', label: 'Abertos' },
+            { value: 'aprovado', label: 'Confirmados' },
+            { value: 'excluido', label: 'Excluídos' },
+          ].map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => setStatusFilter(item.value)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                statusFilter === item.value
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {isAdmin && (
@@ -590,8 +594,6 @@ const Pagamentos: React.FC = () => {
             type="button"
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-semibold"
             onClick={() => {
-              setError(null);
-              setSuccessMessage(null);
               setShowPixConfigModal(true);
             }}
           >
@@ -611,8 +613,6 @@ const Pagamentos: React.FC = () => {
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
             disabled={pedidosConfirmados.length === 0 || !pixKey}
             onClick={() => {
-              setError(null);
-              setSuccessMessage(null);
               setShowPayModal(true);
             }}
           >
@@ -659,12 +659,10 @@ const Pagamentos: React.FC = () => {
                   {isAdmin && (
                     <button
                       onClick={() => {
-                        setError(null);
-                        setSuccessMessage(null);
                         if (normalizeStatus(pagamento.status) === 'pendente') {
                           setPendingPagamentoConfirmId(pagamento.id_pagamento);
                         } else {
-                          setError(`Pagamento #${pagamento.id_pagamento} não pode ser confirmado pois não está em aberto (status atual: ${formatStatusLabel(pagamento.status)}).`);
+                          toast.showError(`Pagamento #${pagamento.id_pagamento} não pode ser confirmado pois não está em aberto (status atual: ${formatStatusLabel(pagamento.status)}).`);
                         }
                       }}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg font-semibold"

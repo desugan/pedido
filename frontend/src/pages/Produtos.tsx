@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { produtoService, Produto, CreateProdutoData } from '../services/produtoService';
+import { usePageToast } from '../components/Toast';
 
 const Produtos: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -9,9 +10,9 @@ const Produtos: React.FC = () => {
   const [editId, setEditId] = useState<number | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
+  const toast = usePageToast();
   const filteredProdutos = produtos.filter((produto) => {
     if (!query) return true;
     return [
@@ -33,7 +34,7 @@ const Produtos: React.FC = () => {
       setProdutos(await produtoService.getAll());
       setCurrentPage(1);
     } catch {
-      setErro('Erro ao carregar produtos');
+      toast.showError('Erro ao carregar produtos');
     }
   };
 
@@ -57,10 +58,10 @@ const Produtos: React.FC = () => {
       setEditId(null);
       setShowCreateModal(false);
       setShowEditModal(false);
-      setErro(null);
       await load();
+      toast.showSuccess(editId ? 'Produto atualizado com sucesso.' : 'Produto criado com sucesso.');
     } catch {
-      setErro('Erro ao salvar produto');
+      toast.showError('Erro ao salvar produto');
     }
   };
 
@@ -88,7 +89,6 @@ const Produtos: React.FC = () => {
           Novo Produto
         </button>
       </div>
-      {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-2xl shadow p-4 border border-slate-100">

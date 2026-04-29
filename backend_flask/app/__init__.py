@@ -1,6 +1,12 @@
 import os
+import logging
 from flask import Flask, jsonify
 from flask_cors import CORS
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 from .auth_guard import apply_auth_guard
 from .config import Config
