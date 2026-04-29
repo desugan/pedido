@@ -1,17 +1,25 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
 # Environment
 .env
 .env.local
+.env.development
+.env.production
 .env.*.local
+.env.*
 
-# Build
+# JWT Keys
+jwt_private.pem
+jwt_public.pem
+
+# Build and Cache
 dist/
 build/
+.vite/
+.vite-cache/
 *.tsbuildinfo
 
 # IDE
@@ -38,8 +46,15 @@ prisma/.env
 prisma/migrations/*
 !prisma/migrations/.gitkeep
 
-# OS
+# OS and Temp
 Thumbs.db
-
-# Temporary files
+sys
+NDH6SA~M
+tsconfig2.json
 .tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/

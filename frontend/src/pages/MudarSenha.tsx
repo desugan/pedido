@@ -25,7 +25,18 @@ const MudarSenha: React.FC = () => {
       setErro(null);
       setSucesso(null);
 
-      await authService.alterarSenha(user.id_usuario, senhaAtual, novaSenha, confirmarSenha);
+      if (novaSenha.length < 6) {
+        setErro('A nova senha deve ter no mínimo 6 caracteres');
+        setLoading(false);
+        return;
+      }
+      if (!/[A-Z]/.test(novaSenha) || !/[a-z]/.test(novaSenha) || !/[^A-Za-z0-9]/.test(novaSenha)) {
+        setErro('A nova senha deve conter letra maiúscula, minúscula e caractere especial');
+        setLoading(false);
+        return;
+      }
+
+      await authService.alterarSenha(senhaAtual, novaSenha, confirmarSenha);
       setSucesso('Senha alterada com sucesso. Faça login novamente.');
 
       setTimeout(() => {
@@ -46,12 +57,16 @@ const MudarSenha: React.FC = () => {
       {sucesso && <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 mb-3">{sucesso}</div>}
 
       <form onSubmit={submit} className="bg-white p-5 rounded-2xl shadow space-y-3 border border-slate-100">
+        <p className="text-sm text-slate-600">
+          Requisitos da nova senha: mínimo 6 caracteres, com letra maiúscula, minúscula e caractere especial.
+        </p>
         <input
           className="w-full border rounded-xl p-2.5"
           type="password"
           placeholder="Senha atual"
           value={senhaAtual}
           onChange={(e) => setSenhaAtual(e.target.value)}
+          maxLength={255}
           required
         />
         <input
@@ -60,6 +75,7 @@ const MudarSenha: React.FC = () => {
           placeholder="Nova senha"
           value={novaSenha}
           onChange={(e) => setNovaSenha(e.target.value)}
+          maxLength={255}
           required
         />
         <input
@@ -68,6 +84,7 @@ const MudarSenha: React.FC = () => {
           placeholder="Confirmar nova senha"
           value={confirmarSenha}
           onChange={(e) => setConfirmarSenha(e.target.value)}
+          maxLength={255}
           required
         />
 

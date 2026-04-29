@@ -2,20 +2,46 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { clienteService, CreateClienteData } from '../services/clienteService';
 import { Cliente } from '../types';
+import { usePageToast } from '../components/Toast';
+import { TableSkeleton, Skeleton } from '../components/Skeleton';
+
+const fmtBRL = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const Clientes: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [formData, setFormData] = useState<CreateClienteData>({
     nome: '',
     status: 'ATIVO',
+    limite_credito: 0,
   });
+  const toast = usePageToast();
+
+  const getLimiteCredito = (cliente: Cliente): number => {
+    const financeiro = (cliente as any).financeiro;
+    if (Array.isArray(financeiro)) {
+      return Number(financeiro[0]?.limite_credito ?? cliente.limite_credito ?? 0);
+    }
+    return Number(financeiro?.limite_credito ?? cliente.limite_credito ?? 0);
+  };
+
+  const getSaldoRestante = (cliente: Cliente): number => {
+    const financeiro = (cliente as any).financeiro;
+    if (Array.isArray(financeiro)) {
+      const item = financeiro[0];
+      const limite = Number(item?.limite_credito ?? cliente.limite_credito ?? 0);
+      const usado = Number(item?.saldo_utilizado ?? cliente.credito_utilizado ?? 0);
+      return limite - usado;
+    }
+    const limite = Number(financeiro?.limite_credito ?? cliente.limite_credito ?? 0);
+    const usado = Number(financeiro?.saldo_utilizado ?? cliente.credito_utilizado ?? 0);
+    return limite - usado;
+  };
   const query = (searchParams.get('q') || '').trim().toLowerCase();
   const filteredClientes = clientes.filter((cliente) => {
     if (!query) return true;
@@ -23,7 +49,9 @@ const Clientes: React.FC = () => {
       String(cliente.id_cliente),
       cliente.nome,
       cliente.status,
-      String(cliente.pedido?.length || 0),
+      String(getLimiteCredito(cliente)),
+      String(getSaldoRestante(cliente)),
+      String((cliente as any).total_pedidos || cliente.pedido?.length || 0),
     ].some((value) => value.toLowerCase().includes(query));
   });
 
@@ -52,9 +80,8 @@ const Clientes: React.FC = () => {
       const data = await clienteService.getAllClientes();
       setClientes(data);
       setCurrentPage(1);
-      setError(null);
     } catch (err) {
-      setError('Erro ao carregar clientes');
+      toast.showError('Erro ao carregar clientes');
       console.error('Erro ao carregar clientes:', err);
     } finally {
       setLoading(false);
@@ -71,9 +98,10 @@ const Clientes: React.FC = () => {
       }
       await loadClientes();
       resetForm();
+      toast.showSuccess(editingCliente ? 'Cliente atualizado com sucesso.' : 'Cliente criado com sucesso.');
     } catch (err) {
       const message = (err as any)?.response?.data?.error || 'Erro ao salvar cliente';
-      setError(message);
+      toast.showError(message);
       console.error('Erro ao salvar cliente:', err);
     }
   };
@@ -83,22 +111,25 @@ const Clientes: React.FC = () => {
     setFormData({
       nome: cliente.nome,
       status: normalizeStatus(cliente.status),
+      limite_credito: getLimiteCredito(cliente),
     });
     setShowForm(true);
   };
 
-
-
   const resetForm = () => {
-    setFormData({ nome: '', status: 'ATIVO' });
+    setFormData({ nome: '', status: 'ATIVO', limite_credito: 0 });
     setEditingCliente(null);
     setShowForm(false);
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-xl">Carregando...</div>
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-5">
+          <Skeleton className="h-9 w-32 mb-2" />
+          <Skeleton className="h-5 w-64" />
+        </div>
+        <TableSkeleton rows={8} />
       </div>
     );
   }
@@ -115,62 +146,74 @@ const Clientes: React.FC = () => {
         </button>
       </div>
 
-      {error && (
-        <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-          {error}
-        </div>
-      )}
-
       {showForm && (
-        <div className="bg-white shadow-sm border border-slate-100 rounded-2xl p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">
-            {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
-          </h2>
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome
-                </label>
-                <input
-                  type="text"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
+        <div className="pedido-modal-backdrop" onClick={resetForm}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-semibold mb-4">
+              {editingCliente ? 'Editar Cliente' : 'Novo Cliente'}
+            </h2>
+            <form onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nome
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.nome}
+                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    maxLength={150}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="ATIVO">Ativo</option>
+                    <option value="INATIVO">Inativo</option>
+                    <option value="INADIMPLENTE">Inadimplente</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Limite de crédito
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={99999999}
+                    value={formData.limite_credito ?? 0}
+                    onChange={(e) => setFormData({ ...formData, limite_credito: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <div className="flex gap-2 mt-6">
+                <button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
                 >
-                  <option value="ATIVO">Ativo</option>
-                  <option value="INATIVO">Inativo</option>
-                  <option value="INADIMPLENTE">Inadimplente</option>
-                </select>
+                  {editingCliente ? 'Atualizar' : 'Salvar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="btn-cancel-neutral px-4 py-2 rounded-xl font-semibold"
+                >
+                  Cancelar
+                </button>
               </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <button
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
-              >
-                {editingCliente ? 'Atualizar' : 'Salvar'}
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="btn-cancel-neutral px-4 py-2 rounded-xl font-semibold"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
@@ -178,19 +221,25 @@ const Clientes: React.FC = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 ID
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Nome
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                Limite
+              </th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                Saldo restante
+              </th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Pedidos
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
                 Ações
               </th>
             </tr>
@@ -223,12 +272,20 @@ const Clientes: React.FC = () => {
                   })()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {fmtBRL(getLimiteCredito(cliente))}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <span className={getSaldoRestante(cliente) < 0 ? 'text-red-600' : 'text-emerald-700'}>
+                    {fmtBRL(getSaldoRestante(cliente))}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <button
                     type="button"
                     className="text-blue-700 font-semibold hover:underline"
                     onClick={() => navigate(`/relatorios?cliente=${cliente.id_cliente}`)}
                   >
-                    {cliente.pedido?.length || 0}
+                    {(cliente as any).total_pedidos || cliente.pedido?.length || 0}
                   </button>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

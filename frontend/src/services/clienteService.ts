@@ -4,11 +4,13 @@ import { Cliente } from '../types';
 export interface CreateClienteData {
   nome: string;
   status: string;
+  limite_credito?: number;
 }
 
 export interface UpdateClienteData {
   nome?: string;
   status?: string;
+  limite_credito?: number;
 }
 
 export const clienteService = {

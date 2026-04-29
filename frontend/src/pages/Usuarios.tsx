@@ -4,6 +4,7 @@ import { usuarioService, Usuario, Perfil, CreateUsuarioData } from '../services/
 import { clienteService } from '../services/clienteService';
 import { Cliente } from '../types';
 import api from '../services/api';
+import { usePageToast } from '../components/Toast';
 
 interface LoginLogEntry {
   timestamp: string;
@@ -14,18 +15,25 @@ interface LoginLogEntry {
   ip?: string;
 }
 
+const formatDisplayText = (value: string | number | null | undefined) => String(value || '').trim().toUpperCase();
+const formatPerfilName = (value: string | number | null | undefined) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'VISUALIZAR' ? 'USUÁRIO' : normalized;
+};
+
 const Usuarios: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [perfis, setPerfis] = useState<Perfil[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [erro, setErro] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<CreateUsuarioData>({ id_cliente: 0, id_perfil: 0, usuario: '', senha: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [loginLog, setLoginLog] = useState<LoginLogEntry[]>([]);
   const [showLog, setShowLog] = useState(false);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
+  const toast = usePageToast();
   const filteredUsuarios = usuarios.filter((usuario) => {
     if (!query) return true;
     return [
@@ -54,9 +62,8 @@ const Usuarios: React.FC = () => {
       setPerfis(p);
       setClientes(c);
       setCurrentPage(1);
-      setErro(null);
     } catch {
-      setErro('Erro ao carregar dados de usuários');
+      toast.showError('Erro ao carregar dados de usuários');
     }
   };
 
@@ -66,7 +73,7 @@ const Usuarios: React.FC = () => {
       setLoginLog(res.data);
       setShowLog(true);
     } catch {
-      setErro('Erro ao carregar log de login');
+      toast.showError('Erro ao carregar log de login');
     }
   };
 
@@ -95,7 +102,7 @@ const Usuarios: React.FC = () => {
         await usuarioService.update(editId, updatePayload);
       } else {
         if (!form.senha.trim()) {
-          setErro('Senha é obrigatória para novo usuário');
+          toast.showError('Senha é obrigatória para novo usuário');
           return;
         }
 
@@ -103,50 +110,97 @@ const Usuarios: React.FC = () => {
       }
       setForm({ id_cliente: 0, id_perfil: 0, usuario: '', senha: '' });
       setEditId(null);
+      setShowForm(false);
+      toast.showSuccess('Usuário salvo com sucesso.');
       await load();
     } catch (err: any) {
-      setErro(err?.response?.data?.error || 'Erro ao salvar usuário');
+      toast.showError(err?.response?.data?.error || 'Erro ao salvar usuário');
     }
   };
 
   const editar = (u: Usuario) => {
     setEditId(u.id_usuario);
     setForm({ id_cliente: u.id_cliente, id_perfil: u.id_perfil, usuario: u.usuario, senha: '' });
+    setShowForm(true);
   };
 
 
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-4">Usuários</h1>
-      {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
 
-      <form onSubmit={submit} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6 grid grid-cols-1 md:grid-cols-4 gap-2">
-        <input className="border rounded-xl p-2" placeholder="Usuário" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} required />
-        <input
-          className="border rounded-xl p-2"
-          type="password"
-          placeholder={editId ? 'Nova senha (opcional)' : 'Senha'}
-          value={form.senha}
-          onChange={(e) => setForm({ ...form, senha: e.target.value })}
-          required={!editId}
-        />
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold text-slate-900">Cadastro de usuários</h2>
+        <button
+          type="button"
+          onClick={() => {
+            setShowForm(true);
+            setEditId(null);
+            setForm({ id_cliente: 0, id_perfil: 0, usuario: '', senha: '' });
+          }}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
+        >
+          Novo Usuário
+        </button>
+      </div>
 
-        <select className="border rounded-xl p-2" value={form.id_cliente} onChange={(e) => setForm({ ...form, id_cliente: Number(e.target.value) })} required>
-          <option value={0}>Selecione cliente</option>
-          {clientes.map((c) => (
-            <option key={c.id_cliente} value={c.id_cliente}>{c.nome}</option>
-          ))}
-        </select>
-
-        <select className="border rounded-xl p-2" value={form.id_perfil} onChange={(e) => setForm({ ...form, id_perfil: Number(e.target.value) })} required>
-          <option value={0}>Selecione perfil</option>
-          {perfis.map((p) => (
-            <option key={p.id_perfil} value={p.id_perfil}>{p.perfil}</option>
-          ))}
-        </select>
-
-        <button className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-2 md:col-span-4 font-semibold" type="submit">{editId ? 'Atualizar' : 'Salvar'}</button>
-      </form>
+      {showForm && (
+        <div className="pedido-modal-backdrop" onClick={() => { setShowForm(false); setEditId(null); }}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">{editId ? 'Editar Usuário' : 'Novo Usuário'}</h3>
+            <form onSubmit={submit} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Usuário</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="Usuário" value={form.usuario} onChange={(e) => setForm({ ...form, usuario: e.target.value })} maxLength={255} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{editId ? 'Nova senha (opcional)' : 'Senha'}</label>
+                  <input
+                    className="border rounded-xl p-2 w-full"
+                    type="password"
+                    placeholder={editId ? 'Nova senha (opcional)' : 'Senha'}
+                    value={form.senha}
+                    onChange={(e) => setForm({ ...form, senha: e.target.value })}
+                    maxLength={255}
+                    required={!editId}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+                  <select className="border rounded-xl p-2 w-full" value={form.id_cliente} onChange={(e) => setForm({ ...form, id_cliente: Number(e.target.value) })} required>
+                    <option value={0}>Selecione cliente</option>
+                    {clientes.map((c) => (
+                      <option key={c.id_cliente} value={c.id_cliente}>{formatDisplayText(c.nome)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Perfil</label>
+                  <select className="border rounded-xl p-2 w-full" value={form.id_perfil} onChange={(e) => setForm({ ...form, id_perfil: Number(e.target.value) })} required>
+                    <option value={0}>Selecione perfil</option>
+                    {perfis.filter((p) => String(p.perfil || '').trim().toUpperCase() !== 'VISUALIZAR').map((p) => (
+                      <option key={p.id_perfil} value={p.id_perfil}>{formatPerfilName(p.perfil)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-semibold"
+                  onClick={() => { setShowForm(false); setEditId(null); }}
+                >
+                  Cancelar
+                </button>
+                <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold" type="submit">
+                  {editId ? 'Atualizar' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl shadow overflow-x-auto border border-slate-100">
         <table className="min-w-full">
@@ -163,9 +217,9 @@ const Usuarios: React.FC = () => {
             {pagedUsuarios.map((u) => (
               <tr key={u.id_usuario} className="border-t">
                 <td className="px-4 py-2">{u.id_usuario}</td>
-                <td className="px-4 py-2">{u.usuario}</td>
-                <td className="px-4 py-2">{u.cliente_nome || u.id_cliente}</td>
-                <td className="px-4 py-2">{u.perfil_nome || u.id_perfil}</td>
+                <td className="px-4 py-2">{formatDisplayText(u.usuario)}</td>
+                <td className="px-4 py-2">{u.cliente_nome ? formatDisplayText(u.cliente_nome) : u.id_cliente}</td>
+                <td className="px-4 py-2">{formatPerfilName(u.perfil_nome || u.id_perfil)}</td>
                 <td className="px-4 py-2 space-x-2">
                   <button className="bg-green-600 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => editar(u)}>Editar</button>
                 </td>

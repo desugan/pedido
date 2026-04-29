@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { fornecedorService, CreateFornecedorData, Fornecedor } from '../services/fornecedorService';
-import axios from 'axios';
+import { usePageToast } from '../components/Toast';
 
 const Fornecedores: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [form, setForm] = useState<CreateFornecedorData>({ razao: '', cnpj: '', status: 'ATIVO' });
   const [editId, setEditId] = useState<number | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const query = (searchParams.get('q') || '').trim().toLowerCase();
+  const toast = usePageToast();
   const filteredFornecedores = fornecedores.filter((fornecedor) => {
     if (!query) return true;
     return [
@@ -32,9 +34,8 @@ const Fornecedores: React.FC = () => {
     try {
       setFornecedores(await fornecedorService.getAll());
       setCurrentPage(1);
-      setErro(null);
     } catch (error) {
-      setErro('Erro ao carregar fornecedores');
+      toast.showError('Erro ao carregar fornecedores');
     }
   };
 
@@ -53,12 +54,12 @@ const Fornecedores: React.FC = () => {
     const cnpj = form.cnpj.trim();
 
     if (!razao || !cnpj) {
-      setErro('Razão social e CNPJ são obrigatórios');
+      toast.showError('Razão social e CNPJ são obrigatórios');
       return;
     }
 
     if (!hasValidCnpjLength(cnpj)) {
-      setErro('CNPJ deve conter 14 números');
+      toast.showError('CNPJ deve conter 14 números');
       return;
     }
 
@@ -70,69 +71,34 @@ const Fornecedores: React.FC = () => {
       }
       setForm({ razao: '', cnpj: '', status: 'ATIVO' });
       setEditId(null);
+      setShowCreateModal(false);
+      setShowEditModal(false);
       await load();
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErro(error.response?.data?.error || 'Erro ao salvar fornecedor');
-      } else {
-        setErro('Erro ao salvar fornecedor');
-      }
+      toast.showSuccess(editId ? 'Fornecedor atualizado com sucesso.' : 'Fornecedor criado com sucesso.');
+    } catch (error: any) {
+      toast.showError(error?.response?.data?.error || 'Erro ao salvar fornecedor');
     }
   };
 
   const editar = (f: Fornecedor) => {
     setEditId(f.id_fornecedor);
     setForm({ razao: f.razao, cnpj: f.cnpj, status: f.status });
-  };
-
-  const excluir = async (id: number) => {
-    if (!window.confirm('Excluir fornecedor?')) return;
-    try {
-      await fornecedorService.delete(id);
-      await load();
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErro(error.response?.data?.error || 'Erro ao excluir fornecedor');
-      } else {
-        setErro('Erro ao excluir fornecedor');
-      }
-    }
+    setShowEditModal(true);
   };
 
   return (
+    <>
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4">Fornecedores</h1>
-      {erro && <div className="text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2 mb-3">{erro}</div>}
-
-      <form onSubmit={submit} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-6 grid grid-cols-1 md:grid-cols-4 gap-2">
-        <input
-          className="border rounded-xl p-2 md:col-span-2"
-          placeholder="Razão Social"
-          value={form.razao}
-          onChange={(e) => setForm({ ...form, razao: e.target.value })}
-          required
-        />
-        <input
-          className="border rounded-xl p-2"
-          placeholder="CNPJ"
-          value={form.cnpj}
-          onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
-          inputMode="numeric"
-          maxLength={18}
-          required
-        />
-        <select
-          className="border rounded-xl p-2"
-          value={form.status || 'ATIVO'}
-          onChange={(e) => setForm({ ...form, status: e.target.value })}
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-3xl font-bold">Fornecedores</h1>
+        <button
+          type="button"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold"
+          onClick={() => { setEditId(null); setForm({ razao: '', cnpj: '', status: 'ATIVO' }); setShowCreateModal(true); }}
         >
-          <option value="ATIVO">ATIVO</option>
-          <option value="INATIVO">INATIVO</option>
-        </select>
-        <button className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-2 md:col-span-4 font-semibold" type="submit">
-          {editId ? 'Atualizar' : 'Salvar'}
+          Novo Fornecedor
         </button>
-      </form>
+      </div>
 
       <div className="bg-white rounded-2xl shadow overflow-x-auto border border-slate-100">
         <table className="min-w-full">
@@ -151,13 +117,10 @@ const Fornecedores: React.FC = () => {
                 <td className="px-4 py-2">{f.id_fornecedor}</td>
                 <td className="px-4 py-2">{f.razao}</td>
                 <td className="px-4 py-2">{f.cnpj}</td>
-                <td className="px-4 py-2">{f.status}</td>
+                <td className="px-4 py-2">{String(f.status || '').toUpperCase()}</td>
                 <td className="px-4 py-2 space-x-2">
                   <button className="bg-green-600 hover:bg-green-600 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => editar(f)}>
                     Editar
-                  </button>
-                  <button className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold" onClick={() => excluir(f.id_fornecedor)}>
-                    Excluir
                   </button>
                 </td>
               </tr>
@@ -188,6 +151,69 @@ const Fornecedores: React.FC = () => {
         </div>
       </div>
     </div>
+
+      {showCreateModal && (
+        <div className="pedido-modal-backdrop" onClick={() => setShowCreateModal(false)}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Novo Fornecedor</h3>
+            <form onSubmit={submit} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="Razão Social" value={form.razao} onChange={(e) => setForm({ ...form, razao: e.target.value })} maxLength={255} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="00.000.000/0001-00" value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} inputMode="numeric" maxLength={18} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select className="border rounded-xl p-2 w-full" value={form.status || 'ATIVO'} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                    <option value="ATIVO">ATIVO</option>
+                    <option value="INATIVO">INATIVO</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button type="button" className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-semibold" onClick={() => setShowCreateModal(false)}>Cancelar</button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold">Salvar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && editId !== null && (
+        <div className="pedido-modal-backdrop" onClick={() => { setShowEditModal(false); setEditId(null); }}>
+          <div className="pedido-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Editar Fornecedor</h3>
+            <form onSubmit={submit} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="Razão Social" value={form.razao} onChange={(e) => setForm({ ...form, razao: e.target.value })} maxLength={255} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
+                  <input className="border rounded-xl p-2 w-full" placeholder="00.000.000/0001-00" value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} inputMode="numeric" maxLength={18} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select className="border rounded-xl p-2 w-full" value={form.status || 'ATIVO'} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                    <option value="ATIVO">ATIVO</option>
+                    <option value="INATIVO">INATIVO</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <button type="button" className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-semibold" onClick={() => { setShowEditModal(false); setEditId(null); }}>Cancelar</button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold">Atualizar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

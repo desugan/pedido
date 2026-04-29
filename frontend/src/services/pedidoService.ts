@@ -1,6 +1,7 @@
 import api from './api';
 
 export interface CreateItemPedidoData {
+  produtoId?: number;
   produtoNome: string;
   quantidade: number;
   precoUnitario: number;
@@ -14,6 +15,7 @@ export interface CreatePedidoData {
 export interface ItemPedido {
   id?: number;
   pedidoId?: number;
+  produtoId?: number;
   produtoNome: string;
   quantidade: number;
   precoUnitario: number;
@@ -23,7 +25,8 @@ export interface ItemPedido {
 export interface Pedido {
   id: number;
   clienteId: number;
-  status: 'pendente' | 'confirmado' | 'pronto' | 'entregue' | 'cancelado';
+  clienteNome?: string;
+  status: 'confirmado' | 'em_pagamento' | 'pago' | 'cancelado';
   total: number;
   itens?: ItemPedido[];
   createdAt: string;

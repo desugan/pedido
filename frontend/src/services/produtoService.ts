@@ -18,7 +18,9 @@ export interface CreateProdutoData {
 
 export const produtoService = {
   async getAll(): Promise<Produto[]> {
-    const response = await api.get('/api/produtos');
+    const timestamp = Date.now();
+    const response = await api.get(`/api/produtos?_t=${timestamp}`);
+    console.log('produtoService.getAll: fetched', response.data.length, 'produtos');
     return response.data;
   },
 
