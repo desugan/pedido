@@ -23,17 +23,31 @@ def _default_database_url() -> str:
 
 class Config:
     DATABASE_URL = _default_database_url()
-    JWT_SECRET = os.getenv("JWT_SECRET", "changeme-set-JWT_SECRET-in-env")
+    JWT_SECRET = os.getenv("JWT_SECRET", "")
+    JWT_PRIVATE_KEY_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "jwt_private.pem")
+    JWT_PUBLIC_KEY_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "jwt_public.pem")
+    JWT_ISSUER = os.getenv("JWT_ISSUER", "pedido-api")
+    JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "pedido-frontend")
+    JWT_TTL_MINUTES = int(os.getenv("JWT_TTL_MINUTES", "15"))
     PORT = int(os.getenv("PORT", "5000"))
-    CORS_ORIGIN = os.getenv("CORS_ORIGIN", "")
+
+    @staticmethod
+    def get_jwt_private_key() -> str:
+        if os.path.exists(Config.JWT_PRIVATE_KEY_PATH):
+            with open(Config.JWT_PRIVATE_KEY_PATH, "r") as f:
+                return f.read()
+        return ""
+
+    @staticmethod
+    def get_jwt_public_key() -> str:
+        if os.path.exists(Config.JWT_PUBLIC_KEY_PATH):
+            with open(Config.JWT_PUBLIC_KEY_PATH, "r") as f:
+                return f.read()
+        return ""
 
     @staticmethod
     def allowed_origins() -> list[str]:
-        if not Config.CORS_ORIGIN:
-            return [
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "https://pedido.uppermu.com.br",
-                "https://pedido.uppermu.com.br:5173",
-            ]
-        return [o.strip() for o in Config.CORS_ORIGIN.split(",") if o.strip()]
+        cors_origin = os.getenv("CORS_ORIGIN", "")
+        if cors_origin:
+            return [o.strip() for o in cors_origin.split(",") if o.strip()]
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]

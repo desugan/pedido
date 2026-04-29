@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 import re
+import time
+from collections import defaultdict
+from threading import Lock
 
 from flask import Blueprint, jsonify, request, g
 import bcrypt
@@ -8,11 +11,34 @@ from app.db import get_connection
 from app.security import sign_token, verify_password
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
-_LOGIN_LOG: list[dict] = []
+
+_attempt_lock = Lock()
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+MAX_ATTEMPTS = 5
+BLOCK_DURATION_SECONDS = 300
 
 
-def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _check_rate_limit(username: str) -> tuple[bool, str]:
+    with _attempt_lock:
+        now = time.time()
+        attempts = _login_attempts[username]
+
+        attempts[:] = [t for t in attempts if now - t < BLOCK_DURATION_SECONDS]
+
+        if len(attempts) >= MAX_ATTEMPTS:
+            return False, "Muitas tentativas. Tente novamente em 5 minutos."
+
+        return True, ""
+
+
+def _record_failed_attempt(username: str):
+    with _attempt_lock:
+        _login_attempts[username].append(time.time())
+
+
+def _clear_attempts(username: str):
+    with _attempt_lock:
+        _login_attempts[username].clear()
 
 
 @auth_bp.post("/login")
@@ -23,6 +49,10 @@ def login():
 
     if not usuario or not senha:
         return jsonify({"error": "Usuário e senha são obrigatórios"}), 400
+
+    allowed, error_msg = _check_rate_limit(usuario)
+    if not allowed:
+        return jsonify({"error": error_msg}), 429
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -38,12 +68,14 @@ def login():
             user = cur.fetchone()
 
             if not user:
-                _LOGIN_LOG.append({"timestamp": _utcnow_iso(), "usuario": usuario, "status": "failed", "reason": "Usuário não encontrado"})
+                _record_failed_attempt(usuario)
                 return jsonify({"error": "Usuário ou senha inválidos"}), 401
 
             if not verify_password(str(user.get("senha") or ""), senha):
-                _LOGIN_LOG.append({"timestamp": _utcnow_iso(), "usuario": usuario, "status": "failed", "reason": "Senha incorreta", "id_usuario": user["id_usuario"]})
+                _record_failed_attempt(usuario)
                 return jsonify({"error": "Usuário ou senha inválidos"}), 401
+
+            _clear_attempts(usuario)
 
             cur.execute("SELECT perfil FROM perfil WHERE id_perfil = %s LIMIT 1", (user["id_perfil"],))
             perfil = cur.fetchone()
@@ -115,8 +147,3 @@ def alterar_senha():
             cur.execute("UPDATE usuario SET senha = %s WHERE id_usuario = %s", (nova_hash, user.get("id_usuario")))
 
     return jsonify({"message": "Senha alterada com sucesso"})
-
-
-@auth_bp.get("/login-log")
-def login_log():
-    return jsonify(_LOGIN_LOG)

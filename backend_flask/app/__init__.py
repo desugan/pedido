@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 
@@ -24,6 +25,7 @@ def create_app() -> Flask:
         app,
         resources={r"/*": {"origins": Config.allowed_origins()}},
         supports_credentials=True,
+        expose_headers=["Content-Type", "Authorization"],
     )
 
     apply_auth_guard(app)
@@ -42,6 +44,9 @@ def create_app() -> Flask:
 
     @app.errorhandler(Exception)
     def handle_error(error: Exception):
-        return jsonify({"error": str(error) or "Internal Server Error"}), 500
+        is_dev = os.getenv("FLASK_ENV") == "development"
+        if is_dev:
+            return jsonify({"error": str(error)}), 500
+        return jsonify({"error": "Internal Server Error"}), 500
 
     return app

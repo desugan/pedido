@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from urllib.parse import urlparse
-import pymysql
+from pymysql.connections import Connection
 from pymysql.cursors import DictCursor
+from queue import Queue, Empty
+from threading import Lock
 
 from .config import Config
 
@@ -25,14 +28,77 @@ def _db_params_from_url(database_url: str) -> dict:
     }
 
 
+class ConnectionPool:
+    _instance = None
+    _lock = Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        self._params = _db_params_from_url(Config.DATABASE_URL)
+        self._pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+        self._pool: Queue = Queue(maxsize=self._pool_size)
+        self._initialized = True
+        self._fill_pool()
+
+    def _fill_pool(self):
+        for _ in range(self._pool_size):
+            try:
+                conn = Connection(**self._params)
+                self._pool.put(conn)
+            except Exception:
+                pass
+
+    def _create_connection(self) -> Connection:
+        try:
+            conn = self._pool.get_nowait()
+            conn.ping(reconnect=True)
+            return conn
+        except Empty:
+            return Connection(**self._params)
+
+    def return_connection(self, conn: Connection):
+        try:
+            conn.ping(reconnect=True)
+            self._pool.put_nowait(conn)
+        except Exception:
+            conn.close()
+
+    def close_all(self):
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                conn.close()
+            except Empty:
+                break
+
+
+_pool = None
+
+
+def _get_pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = ConnectionPool()
+    return _pool
+
+
 @contextmanager
 def get_connection():
-    params = _db_params_from_url(Config.DATABASE_URL)
-    conn = pymysql.connect(**params)
+    pool = _get_pool()
+    conn = pool._create_connection()
     try:
         yield conn
     finally:
-        conn.close()
+        pool.return_connection(conn)
 
 
 def query_all(sql: str, params: tuple | list | None = None) -> list[dict]:
