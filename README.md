@@ -44,8 +44,7 @@ Sistema de gerenciamento de pedidos com controle de crédito, pagamento, estoque
 
 | Componente | Tecnologia |
 |------------|------------|
-| **Backend (Principal)** | Flask (Python) + MySQL |
-| **Backend (Alternativo)** | Express (Node.js) + Prisma |
+| **Backend** | Express (Node.js) + Prisma + MySQL |
 | **Frontend** | React + Vite + TypeScript + Tailwind |
 | **Autenticação** | JWT Bearer Token (RS256) |
 | **Infra** | Docker & Docker Compose |
@@ -56,67 +55,48 @@ Sistema de gerenciamento de pedidos com controle de crédito, pagamento, estoque
 
 ### 1. Pré-requisitos
 - Node.js (v18+)
-- Python (v3.10+)
-- Docker & Docker Compose (opcional, mas recomendado)
+- Docker & Docker Compose (opcional)
 
 ### 2. Configuração do Ambiente
 Copie o arquivo de exemplo e configure suas variáveis:
 ```bash
 cp .env.example .env
 ```
-> **Nota:** Certifique-se de que os arquivos `jwt_private.pem` e `jwt_public.pem` existam na pasta `backend_flask/` para o funcionamento do JWT.
 
-### 3. Execução com Docker (Recomendado)
-Para subir todo o ambiente (Banco + App) em segundos:
+### 3. Instalação das Dependências
 ```bash
-docker-compose up -d
+npm install
 ```
 
 ### 4. Execução Manual (Desenvolvimento)
-Se preferir rodar localmente sem Docker:
-
-**Instale as dependências:**
 ```bash
-# Dependências do Workspace e Frontend
-npm install
-
-# Ambiente Virtual Python
-python -m venv backend_flask/.venv
-# Windows: backend_flask\.venv\Scripts\activate
-# Linux/Mac: source backend_flask/.venv/bin/activate
-pip install -r backend_flask/requirements.txt
-```
-
-**Inicie o Banco de Dados:**
-```bash
-docker run -d --name mysql-pedido -e MYSQL_ROOT_PASSWORD=senha -e MYSQL_DATABASE=pedido -p 3306:3306 mysql:8.0
-```
-
-**Rode o projeto:**
-```bash
-# Inicia Frontend + Backend Flask simultaneamente
+# Inicia Frontend + Backend
 npm run dev
+```
+
+### 5. Execução com Docker (Recomendado)
+```bash
+docker-compose up -d
 ```
 
 ---
 
 ## 📂 Estrutura do Projeto
 
-```text
+```
 .
-├── backend/            # Backend alternativo em Node.js (Express/Prisma)
-├── backend_flask/      # Backend principal em Flask
-│   ├── app/
-│   │   ├── routes/     # Endpoints da API
-│   │   └── db.py       # Conexão MySQL
-│   └── run.py          # Entry point Flask
-├── frontend/           # Aplicação React
+├── backend_express/       # Backend em Node.js (Express/Prisma)
+│   ├── controllers/       # Controladores da API
+│   ├── routes/            # Rotas da API
+│   ├── services/          # Serviços e utilitários
+│   └── prisma/            # Schema do banco e migrações
+├── frontend/              # Aplicação React
 │   ├── src/
-│   │   ├── components/ # UI Components (Toast, Skeletons)
-│   │   ├── pages/      # Telas da aplicação
-│   │   └── services/   # Integração com API
+│   │   ├── components/    # UI Components (Toast, Skeletons)
+│   │   ├── pages/         # Telas da aplicação
+│   │   └── services/      # Integração com API
 │   └── vite.config.ts
-├── docker-compose.yml  # Orquestração de containers
+├── docker-compose.yml     # Orquestração de containers
 └── README.md
 ```
 
@@ -138,7 +118,7 @@ npm run dev
 
 ### Erro de Autenticação (JWT)
 - Verifique se as chaves RSA (.pem) foram geradas e estão na pasta correta.
-- O backend Flask espera chaves RS256 para assinatura dos tokens.
+- O backend espera chaves RS256 para assinatura dos tokens.
 
 ### Problemas com o Banco de Dados
 - Se usar Docker Compose, verifique os logs: `docker-compose logs -f mysql`.

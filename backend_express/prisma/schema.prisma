@@ -12,8 +12,6 @@ model Cliente {
   nome          String
   status        String?     @default("ATIVO")
   contato       String?
-  createdAt     DateTime    @default(now()) @map("data")
-  updatedAt     DateTime    @updatedAt
   financeiro    Financeiro?
   usuarios      Usuario[]
   pedidos       Pedido[]
@@ -51,23 +49,21 @@ model Usuario {
   perfil      Perfil   @relation(fields: [id_perfil], references: [id_perfil])
   usuario     String   @unique
   senha       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 
   @@map("usuario")
 }
 
 model Produto {
-  id_produto  Int      @id @default(autoincrement())
-  nome        String
-  valor       Float
-  oldvalor    Float?
-  marca       String?
-  saldo       Float    @default(0)
-  createdAt   DateTime @default(now()) @map("data")
-  updatedAt   DateTime @updatedAt
-  pedidoItems PedidoItem[]
-  lancamentoItems LancamentoItem[]
+  id_produto          Int      @id @default(autoincrement())
+  nome                String
+  valor               Float
+  oldvalor            Float?
+  marca               String
+  saldo               Float
+  data_compra         DateTime?
+  qtd_ultima_compra   Float?
+  pedidoItems         PedidoItem[]
+  lancamentoItems     LancamentoItem[]
 
   @@map("produto")
 }
@@ -77,9 +73,10 @@ model Pedido {
   id_cliente         Int
   cliente            Cliente          @relation(fields: [id_cliente], references: [id_cliente])
   total              Float
-  status             String           @default("pendente")
-  createdAt          DateTime         @default(now()) @map("data")
-  updatedAt          DateTime         @updatedAt
+  data               DateTime
+  status             String
+  autorizado         String?
+  data_autorizado    DateTime?
   itens              PedidoItem[]
   pedidoPagamentos   PedidoPagamento[]
 
@@ -144,12 +141,11 @@ model Pagamento {
   id_cliente      Int
   cliente         Cliente          @relation(fields: [id_cliente], references: [id_cliente])
   valor           Float
-  qrcode          String?          @map("qr_code")
-  chavepix        String?          @map("chave_pix")
-  status          String           @default("pendente")
-  data_criacao    DateTime         @default(now()) @map("data_criacao")
-  data_pagamento  DateTime?        @map("data_pagamento")
-  updatedAt       DateTime         @updatedAt
+  qrcode          String           @db.Text
+  chavepix        String
+  status          String
+  data_criacao    DateTime
+  data_pagamento  DateTime?
   pedidoPagamentos PedidoPagamento[]
 
   @@map("pagamento")

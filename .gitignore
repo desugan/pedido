@@ -58,3 +58,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Backend Express
+backend_express/node_modules/
+backend_express/dist/
+backend_express/*.log
+backend_express/yarn.lock
+backend_express/package-lock.json

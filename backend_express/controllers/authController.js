@@ -74,10 +74,58 @@ exports.login = async (req, res) => {
 
     const token = generateToken(user);
     res.json({ 
-      user: { id_usuario: user.id_usuario, usuario: user.usuario, name: user.name }, 
+      user: { 
+        id_usuario: user.id_usuario, 
+        usuario: user.usuario, 
+        id_perfil: user.id_perfil,
+        id_cliente: user.id_cliente
+      }, 
       token 
     });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao fazer login' });
+  }
+};
+
+exports.alterarSenha = async (req, res) => {
+  try {
+    const { senhaAtual, novaSenha, confirmarSenha } = req.body;
+    const userId = req.user?.id_usuario;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Usuário não autenticado' });
+    }
+
+    if (!novaSenha || !senhaAtual) {
+      return res.status(400).json({ error: 'Senhas são obrigatórias' });
+    }
+
+    if (novaSenha !== confirmarSenha) {
+      return res.status(400).json({ error: 'Nova senha e confirmação não coincidem' });
+    }
+
+    if (novaSenha.length < 6) {
+      return res.status(400).json({ error: 'Senha deve ter pelo menos 6 caracteres' });
+    }
+
+    const user = await prisma.usuario.findUnique({ where: { id_usuario: userId } });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    const validPassword = await bcrypt.compare(senhaAtual, user.senha);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Senha atual incorreta' });
+    }
+
+    const hashed = await bcrypt.hash(novaSenha, 12);
+    await prisma.usuario.update({
+      where: { id_usuario: userId },
+      data: { senha: hashed }
+    });
+
+    res.json({ message: 'Senha alterada com sucesso' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao alterar senha' });
   }
 };

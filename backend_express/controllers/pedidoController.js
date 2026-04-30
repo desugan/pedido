@@ -162,30 +162,35 @@ exports.create = async (req, res) => {
       return res.status(400).json({ error: `Estoque insuficiente: ${insufficientStock.join('; ')}` });
     }
 
-    const pedido = await prisma.pedido.create({
-      data: {
-        id_cliente: clienteId,
-        total,
-        status: 'pendente',
-        itens: {
-          create: itens.map(item => ({
-            id_produto: item.produtoId,
-            qtd: parseFloat(item.quantidade),
-            vlr_item: parseFloat(item.precoUnitario),
-            vlr_total: parseFloat(item.quantidade) * parseFloat(item.precoUnitario),
-            vlr_custo: 0,
-          }))
-        }
-      },
-      include: { itens: true }
-    });
-
-    for (const item of itens) {
-      await prisma.produto.update({
-        where: { id_produto: item.produtoId },
-        data: { saldo: { decrement: parseFloat(item.quantidade) } }
+    const pedido = await prisma.$transaction(async (tx) => {
+      const created = await tx.pedido.create({
+        data: {
+          id_cliente: clienteId,
+          total,
+          status: 'pendente',
+          data: new Date(),
+          itens: {
+            create: itens.map(item => ({
+              id_produto: item.produtoId,
+              qtd: parseFloat(item.quantidade),
+              vlr_item: parseFloat(item.precoUnitario),
+              vlr_total: parseFloat(item.quantidade) * parseFloat(item.precoUnitario),
+              vlr_custo: 0,
+            }))
+          }
+        },
+        include: { itens: true }
       });
-    }
+
+      for (const item of itens) {
+        await tx.produto.update({
+          where: { id_produto: item.produtoId },
+          data: { saldo: { decrement: parseFloat(item.quantidade) } }
+        });
+      }
+
+      return created;
+    });
 
     const created = await _getPedidoWithItens(pedido.id_pedido);
     res.status(201).json(created);

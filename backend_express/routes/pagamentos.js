@@ -8,6 +8,5 @@ router.get('/cliente/:clienteId', authMiddleware, pagamentoController.getByClien
 router.get('/:id', authMiddleware, pagamentoController.getById);
 router.post('/', authMiddleware, pagamentoController.create);
 router.patch('/:id/status', authMiddleware, pagamentoController.updateStatus);
-router.delete('/:id', authMiddleware, pagamentoController.delete);
 
 module.exports = router;

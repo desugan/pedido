@@ -4,11 +4,10 @@
   "description": "Buteco do TI workspace",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n FLASK,FRONTEND -c cyan,green \"./backend_flask/.venv/bin/python backend_flask/run.py\" \"npm --prefix frontend run dev\"",
-    "dev:backend": "./backend_flask/.venv/bin/python backend_flask/run.py",
+    "dev": "concurrently -k -n BACKEND,FRONTEND -c cyan,green \"node backend_express/server.js\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "node backend_express/server.js",
     "dev:frontend": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build",
-    "test": "./backend_flask/.venv/bin/python -m pytest backend_flask"
+    "build": "npm --prefix frontend run build"
   },
   "keywords": [
     "pedidos",

@@ -122,15 +122,16 @@ exports.relClientes = async (req, res) => {
     const { status } = req.query;
     const where = status ? { status } : {};
 
-    const dados = await prisma.cliente.findMany({
-      where,
-      include: { financeiro: { orderBy: { id_financeiro: 'desc' }, take: 1 } }
-    });
+    const dados = await prisma.cliente.findMany({ where });
 
     const mapped = [];
     for (const c of dados) {
-      const limite = parseFloat(c.financeiro?.[0]?.limite_credito || 0);
-      const creditoUtilizado = parseFloat(c.financeiro?.[0]?.saldo_utilizado || 0);
+      const financeiro = await prisma.financeiro.findFirst({
+        where: { id_cliente: c.id_cliente },
+        orderBy: { id_financeiro: 'desc' }
+      });
+      const limite = parseFloat(financeiro?.limite_credito || 0);
+      const creditoUtilizado = parseFloat(financeiro?.saldo_utilizado || 0);
       const totalPedidos = await prisma.pedido.count({ where: { id_cliente: c.id_cliente } });
       const totalPagamentos = await prisma.pagamento.count({ where: { id_cliente: c.id_cliente } });
 
@@ -209,15 +210,17 @@ exports.relUsuario = async (req, res) => {
     const id_cliente = parseInt(req.query.id_cliente);
     if (!id_cliente) return res.status(400).json({ error: 'id_cliente obrigatório' });
 
-    const cliente = await prisma.cliente.findUnique({
-      where: { id_cliente },
-      include: { financeiro: { orderBy: { id_financeiro: 'desc' }, take: 1 } }
-    });
+    const cliente = await prisma.cliente.findUnique({ where: { id_cliente } });
 
     if (!cliente) return res.status(404).json({ error: 'Cliente não encontrado' });
 
-    const limite = parseFloat(cliente.financeiro?.[0]?.limite_credito || 0);
-    const creditoUtilizado = parseFloat(cliente.financeiro?.[0]?.saldo_utilizado || 0);
+    const financeiro = await prisma.financeiro.findFirst({
+      where: { id_cliente },
+      orderBy: { id_financeiro: 'desc' }
+    });
+
+    const limite = parseFloat(financeiro?.limite_credito || 0);
+    const creditoUtilizado = parseFloat(financeiro?.saldo_utilizado || 0);
 
     const pedidos = await prisma.pedido.findMany({
       where: { id_cliente },

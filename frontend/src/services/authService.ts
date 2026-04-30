@@ -17,8 +17,8 @@ const TOKEN_KEY = 'buteco_token';
 export const authService = {
   async login(usuario: string, senha: string): Promise<AuthUser> {
     const response = await api.post('/api/auth/login', {
-      usuario: usuario.trim(),
-      senha: senha.trim(),
+      email: usuario.trim(),
+      password: senha.trim(),
     });
     const { token, user } = response.data as { token: string; user: AuthUser };
     localStorage.setItem(TOKEN_KEY, token);

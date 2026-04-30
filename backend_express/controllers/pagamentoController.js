@@ -1,368 +1,171 @@
 const prisma = require('../db/prisma');
-const { paginatedResponse } = require('../utils/response');
 
-const _iso = (value) => {
-  if (value && typeof value.toISOString === 'function') {
-    return value.toISOString();
-  }
-  return value;
-};
+const _toN = (v) => v === null || v === undefined ? null : Number(v);
+const _iso = (v) => v && typeof v.toISOString === 'function' ? v.toISOString() : v;
+const _norm = (v) => String(v || '').trim().toLowerCase();
 
-const _mapRow = (row) => ({
-  id_pagamento: row.id_pagamento,
-  valor: parseFloat(row.valor || 0),
-  qrcode: row.qrcode,
-  chavepix: row.chavepix,
-  status: row.status,
-  data_criacao: _iso(row.data_criacao),
-  data_pagamento: _iso(row.data_pagamento),
-  id_cliente: row.id_cliente,
-  cliente: row.cliente_nome ? { nome: row.cliente_nome } : null,
+const _map = (r) => ({
+  id_pagamento: _toN(r.id_pagamento),
+  valor: parseFloat(r.valor || 0),
+  qrcode: r.qrcode,
+  chavepix: r.chavepix,
+  status: r.status,
+  data_criacao: _iso(r.data_criacao),
+  data_pagamento: _iso(r.data_pagamento),
+  id_cliente: _toN(r.id_cliente),
+  cliente: r.cliente_nome ? { nome: r.cliente_nome } : null,
 });
 
-const _normalizeStatus = (value) => str(value || '').trim().toLowerCase();
-
-const _extractValidPedidoIds = (rawIds) => {
-  if (!Array.isArray(rawIds)) return [];
-  const seen = new Set();
-  const uniqueIds = [];
-  for (const raw of rawIds) {
-    try {
-      const pedido_id = parseInt(raw);
-      if (pedido_id > 0 && !seen.has(pedido_id)) {
-        seen.add(pedido_id);
-        uniqueIds.push(pedido_id);
-      }
-    } catch (e) { continue; }
+const _ids = (arr) => {
+  if (!Array.isArray(arr)) return [];
+  const seen = new Set(), out = [];
+  for (const x of arr) {
+    const n = parseInt(x);
+    if (n > 0 && !seen.has(n)) { seen.add(n); out.push(n); }
   }
-  return uniqueIds;
+  return out;
 };
 
-const _ensureFinanceiro = async (clienteId) => {
-  const existing = await prisma.financeiro.findFirst({
-    where: { id_cliente: clienteId },
-    orderBy: { id_financeiro: 'desc' }
-  });
-  if (existing) return existing.id_financeiro;
-
-  const created = await prisma.financeiro.create({
-    data: { id_cliente: clienteId, limite_credito: 0, saldo_utilizado: 0, ultimo_limite: 0 }
-  });
-  return created.id_financeiro;
+const _linked = async (pid) => {
+  const r = await prisma.$queryRaw`SELECT id_pedido FROM pagamentopedido WHERE id_pagamento = ${pid}`;
+  return r.map(x => _toN(x.id_pedido));
 };
 
-const _subtractSaldoUtilizado = async (clienteId, amount) => {
-  const amountNum = parseFloat(amount || 0);
-  if (amountNum <= 0) return;
-  const finId = await _ensureFinanceiro(clienteId);
-  const row = await prisma.financeiro.findUnique({ where: { id_financeiro: finId } });
-  const atual = parseFloat(row?.saldo_utilizado || 0);
-  const novo = Math.max(atual - amountNum, 0);
-  await prisma.financeiro.update({
-    where: { id_financeiro: finId },
-    data: { saldo_utilizado: novo, usuario_alteracao: 'SISTEMA' }
-  });
+const _fin = async (cid) => {
+  const r = await prisma.$queryRaw`SELECT id_financeiro FROM financeiro WHERE id_cliente = ${cid} ORDER BY id_financeiro DESC LIMIT 1`;
+  if (r.length) return _toN(r[0].id_financeiro);
+  await prisma.$queryRaw`INSERT INTO financeiro (id_cliente, limite_credito, saldo_utilizado, ultimo_limite, data_criacao, usuario_alteracao) VALUES (${cid}, 0, 0, 0, NOW(), 'SISTEMA')`;
+  const c = await prisma.$queryRaw`SELECT id_financeiro FROM financeiro WHERE id_cliente = ${cid} ORDER BY id_financeiro DESC LIMIT 1`;
+  return _toN(c[0].id_financeiro);
 };
 
-const _addSaldoUtilizado = async (clienteId, amount) => {
-  const amountNum = parseFloat(amount || 0);
-  if (amountNum <= 0) return;
-  const finId = await _ensureFinanceiro(clienteId);
-  const row = await prisma.financeiro.findUnique({ where: { id_financeiro: finId } });
-  const atual = parseFloat(row?.saldo_utilizado || 0);
-  const novo = atual + amountNum;
-  await prisma.financeiro.update({
-    where: { id_financeiro: finId },
-    data: { saldo_utilizado: novo, usuario_alteracao: 'SISTEMA' }
-  });
+const _sub = async (cid, amt) => {
+  if (amt <= 0) return;
+  const fid = await _fin(cid);
+  const r = await prisma.$queryRaw`SELECT saldo_utilizado FROM financeiro WHERE id_financeiro = ${fid}`;
+  const novo = Math.max(parseFloat(r[0]?.saldo_utilizado || 0) - amt, 0);
+  await prisma.$queryRaw`UPDATE financeiro SET saldo_utilizado = ${novo}, usuario_alteracao = 'SISTEMA' WHERE id_financeiro = ${fid}`;
 };
 
-const _linkedPedidoIds = async (pagamentoId) => {
-  const links = await prisma.pedidoPagamento.findMany({
-    where: { id_pagamento: pagamentoId }
-  });
-  return links.map(l => l.id_pedido);
+const _add = async (cid, amt) => {
+  if (amt <= 0) return;
+  const fid = await _fin(cid);
+  const r = await prisma.$queryRaw`SELECT saldo_utilizado FROM financeiro WHERE id_financeiro = ${fid}`;
+  const novo = parseFloat(r[0]?.saldo_utilizado || 0) + amt;
+  await prisma.$queryRaw`UPDATE financeiro SET saldo_utilizado = ${novo}, usuario_alteracao = 'SISTEMA' WHERE id_financeiro = ${fid}`;
 };
 
 exports.getAll = async (req, res) => {
-  try {
-    const { status } = req.query;
-    const { skip, limit } = req.pagination || {};
-    const where = status ? { status } : {};
-
-    const [pagamentos, total] = await Promise.all([
-      prisma.pagamento.findMany({
-        where,
-        include: { cliente: { select: { nome: true } } },
-        orderBy: { id_pagamento: 'desc' },
-        skip: skip || 0,
-        take: limit || 50
-      }),
-      prisma.pagamento.count({ where })
-    ]);
-
-    const mapped = pagamentos.map(p => ({
-      ..._mapRow(p),
-      cliente_nome: p.cliente?.nome
-    }));
-
-    const response = paginatedResponse(mapped, total, req);
-    res.json(response);
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar pagamentos' });
-  }
+  const { status } = req.query;
+  const rows = status 
+    ? await prisma.$queryRaw`SELECT p.*, c.nome AS cliente_nome FROM pagamento p LEFT JOIN cliente c ON c.id_cliente = p.id_cliente WHERE p.status = ${status} ORDER BY p.id_pagamento DESC`
+    : await prisma.$queryRaw`SELECT p.*, c.nome AS cliente_nome FROM pagamento p LEFT JOIN cliente c ON c.id_cliente = p.id_cliente ORDER BY p.id_pagamento DESC`;
+  res.json(rows.map(_map));
 };
 
 exports.getByCliente = async (req, res) => {
-  try {
-    const pagamentos = await prisma.pagamento.findMany({
-      where: { id_cliente: parseInt(req.params.clienteId) },
-      include: { cliente: { select: { nome: true } } },
-      orderBy: { id_pagamento: 'desc' }
-    });
-    res.json(pagamentos.map(p => ({
-      ..._mapRow(p),
-      cliente_nome: p.cliente?.nome
-    })));
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar pagamentos do cliente' });
-  }
-};
-
-const _getPagamentoWithPedidos = async (pagamentoId) => {
-  const pagamento = await prisma.pagamento.findUnique({
-    where: { id_pagamento: pagamentoId },
-    include: { cliente: { select: { nome: true } } }
-  });
-  if (!pagamento) return null;
-
-  const links = await prisma.pedidoPagamento.findMany({
-    where: { id_pagamento: pagamentoId }
-  });
-  const pedidoIds = links.map(l => l.id_pedido);
-
-  const payload = {
-    ..._mapRow(pagamento),
-    cliente_nome: pagamento.cliente?.nome,
-    pagamentopedido: links.map(l => ({
-      id_pagamento_pedido: l.id_pagamento_pedido,
-      id_pedido: l.id_pedido,
-      id_pagamento: l.id_pagamento
-    }))
-  };
-
-  if (pedidoIds.length === 0) {
-    payload.pedidos = [];
-    return payload;
-  }
-
-  const pedidos = await prisma.pedido.findMany({
-    where: { id_pedido: { in: pedidoIds } },
-    include: {
-      cliente: { select: { nome: true } },
-      itens: { include: { produto: { select: { nome: true } } } }
-    }
-  });
-
-  payload.pedidos = pedidos.map(p => ({
-    id: p.id_pedido,
-    clienteId: p.id_cliente,
-    clienteNome: p.cliente?.nome,
-    status: p.status,
-    total: parseFloat(p.total),
-    createdAt: _iso(p.data),
-    updatedAt: _iso(p.updatedAt),
-    itens: p.itens.map(it => ({
-      id: it.id_item_pedido,
-      pedidoId: it.id_pedido,
-      produtoNome: it.produto?.nome || '',
-      quantidade: parseFloat(it.qtd),
-      precoUnitario: parseFloat(it.vlr_item),
-      subtotal: parseFloat(it.vlr_total),
-    }))
-  }));
-
-  return payload;
+  const id = parseInt(req.params.clienteId);
+  const rows = await prisma.$queryRaw`SELECT p.*, c.nome AS cliente_nome FROM pagamento p LEFT JOIN cliente c ON c.id_cliente = p.id_cliente WHERE p.id_cliente = ${id} ORDER BY p.id_pagamento DESC`;
+  res.json(rows.map(_map));
 };
 
 exports.getById = async (req, res) => {
-  try {
-    const pagamento = await _getPagamentoWithPedidos(parseInt(req.params.id));
-    if (!pagamento) return res.status(404).json({ error: 'Pagamento não encontrado' });
-    res.json(pagamento);
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar pagamento' });
-  }
+  const id = parseInt(req.params.id);
+  const rows = await prisma.$queryRaw`SELECT p.*, c.nome AS cliente_nome FROM pagamento p LEFT JOIN cliente c ON c.id_cliente = p.id_cliente WHERE p.id_pagamento = ${id} LIMIT 1`;
+  if (!rows.length) return res.status(404).json({ error: 'Pagamento não encontrado' });
+
+  const p = _map(rows[0]);
+  const pp = await prisma.$queryRaw`SELECT * FROM pagamentopedido WHERE id_pagamento = ${id}`;
+  p.pagamentopedido = pp.map(x => ({ id_pagamento_pedido: _toN(x.id_pagamento_pedido), id_pedido: _toN(x.id_pedido), id_pagamento: _toN(x.id_pagamento) }));
+
+  const pids = pp.map(x => _toN(x.id_pedido)).filter(x => x > 0);
+  if (!pids.length) { p.pedidos = []; return res.json(p); }
+
+  const ids = pids.join(',');
+  const peds = await prisma.$queryRaw`SELECT p.*, c.nome AS cliente_nome FROM pedido p LEFT JOIN cliente c ON c.id_cliente = p.id_cliente WHERE p.id_pedido IN (${prisma.$queryRaw(ids)})`;
+  const itns = await prisma.$queryRaw`SELECT pi.*, pr.nome AS produto_nome FROM pedido_item pi LEFT JOIN produto pr ON pr.id_produto = pi.id_produto WHERE pi.id_pedido IN (${prisma.$queryRaw(ids)})`;
+
+  const itmMap = {};
+  for (const i of itns) { const pid = _toN(i.id_pedido); if (!itmMap[pid]) itmMap[pid] = []; itmMap[pid].push({ id: _toN(i.id_item_pedido), pedidoId: pid, produtoNome: i.produto_nome || '', quantidade: parseFloat(i.qtd || 0), precoUnitario: parseFloat(i.vlr_item || 0), subtotal: parseFloat(i.vlr_total || 0) }); }
+
+  p.pedidos = peds.map(x => ({ id: _toN(x.id_pedido), clienteId: _toN(x.id_cliente), clienteNome: x.cliente_nome, status: x.status, total: parseFloat(x.total || 0), createdAt: _iso(x.data), updatedAt: _iso(x.data), itens: itmMap[_toN(x.id_pedido)] || [] }));
+  res.json(p);
 };
 
 exports.create = async (req, res) => {
+  console.log('CREATE PAGAMENTO - body:', JSON.stringify(req.body).substring(0,500));
+  const { id_cliente, valor, qrcode, chavepix, status, pedidoIds } = req.body;
+  if (!id_cliente || !valor || !qrcode || !chavepix) return res.status(400).json({ error: 'Dados inválidos' });
+  const pids = _ids(pedidoIds);
+  console.log('CREATE PAGAMENTO - pids:', pids);
+  if (!pids.length) return res.status(400).json({ error: 'Selecione ao menos um pedido' });
+
+  const stat = (status || 'pendente').toLowerCase() || 'pendente';
+  const idsStr = pids.join(',');
+
   try {
-    const { id_cliente, valor, qrcode, chavepix, status, pedidoIds } = req.body;
-
-    if (!id_cliente || !valor || !qrcode || !chavepix) {
-      return res.status(400).json({ error: 'Dados de pagamento inválidos' });
-    }
-
-    const validPedidoIds = _extractValidPedidoIds(pedidoIds || []);
-    if (validPedidoIds.length === 0) {
-      return res.status(400).json({ error: 'Selecione ao menos um pedido para vincular ao pagamento.' });
-    }
-
-    const elegiveis = await prisma.pedido.findMany({
-      where: {
-        id_pedido: { in: validPedidoIds },
-        id_cliente: parseInt(id_cliente),
-        status: 'confirmado'
+    console.log('CHECK - id_cliente:', parseInt(id_cliente), 'pids:', pids);
+    
+    // Check directly with prisma - simplified query
+    const testPed = await prisma.pedido.findFirst({
+      where: { id_pedido: pids[0], id_cliente: parseInt(id_cliente), status: 'confirmado' },
+      select: { id_pedido: true, status: true }
+    });
+    console.log('CHECK - testPed:', testPed);
+    
+    if (!testPed) throw new Error('Pedido não encontrado com status confirmado');
+    
+    await prisma.$transaction(async tx => {
+      console.log('TRANSACTION - inserting pagamento');
+      await tx.$queryRaw`INSERT INTO pagamento (valor, qrcode, chavepix, status, data_criacao, id_cliente) VALUES (${parseFloat(valor)}, ${String(qrcode).substring(0,1000)}, ${String(chavepix).substring(0,255)}, ${stat}, NOW(), ${parseInt(id_cliente)})`;
+      const last = await tx.$queryRaw`SELECT LAST_INSERT_ID() as id`;
+      const pid = Number(last[0].id);
+      console.log('TRANSACTION - pid:', pid);
+      for (const p of pids) await tx.$queryRaw`INSERT INTO pagamentopedido (id_pedido, id_pagamento) VALUES (${p}, ${pid})`;
+      if (pids.length) {
+        await tx.$queryRaw`UPDATE pedido SET status = 'em_pagamento' WHERE id_pedido = ${pids[0]} AND status = 'confirmado'`;
       }
     });
-
-    if (elegiveis.length !== validPedidoIds.length) {
-      return res.status(400).json({ error: 'Há pedidos inválidos para pagamento (cliente/status).' });
-    }
-
-    const pagamento = await prisma.pagamento.create({
-      data: {
-        id_cliente: parseInt(id_cliente),
-        valor: parseFloat(valor),
-        qrcode: qrcode,
-        chavepix: chavepix,
-        status: (status || 'pendente').toLowerCase() || 'pendente',
-        pedidoPagamentos: {
-          create: validPedidoIds.map(pid => ({ id_pedido: pid }))
-        }
-      }
-    });
-
-    await prisma.pedido.updateMany({
-      where: { id_pedido: { in: validPedidoIds }, status: 'confirmado' },
-      data: { status: 'em_pagamento' }
-    });
-
-    const result = await _getPagamentoWithPedidos(pagamento.id_pagamento);
-    res.status(201).json(result);
-  } catch (error) {
-    res.status(500).json({ error: `Erro ao criar pagamento: ${error.message}` });
+    const rows = await prisma.$queryRaw`SELECT p.*, c.nome AS cliente_nome FROM pagamento p LEFT JOIN cliente c ON c.id_cliente = p.id_cliente ORDER BY p.id_pagamento DESC LIMIT 1`;
+    console.log('CREATE - success, row:', rows[0]?.id_pagamento);
+    res.status(201).json(_map(rows[0]));
+  } catch (e) {
+    console.log('CREATE - error:', e.message);
+    res.status(500).json({ error: 'Erro: ' + e.message });
   }
 };
 
 exports.updateStatus = async (req, res) => {
-  try {
-    const { status } = req.body;
-    if (!status) return res.status(400).json({ error: 'Status inválido' });
+  const { status } = req.body;
+  const newStat = (status || '').trim().toLowerCase();
+  if (!newStat) return res.status(400).json({ error: 'Status inválido' });
 
-    const pagamento = await prisma.pagamento.findUnique({
-      where: { id_pagamento: parseInt(req.params.id) }
-    });
-    if (!pagamento) return res.status(404).json({ error: 'Pagamento não encontrado' });
+  const id = parseInt(req.params.id);
+  const row = await prisma.$queryRaw`SELECT status FROM pagamento WHERE id_pagamento = ${id}`;
+  if (!row.length) return res.status(404).json({ error: 'Pagamento não encontrado' });
 
-    const oldStatus = _normalizeStatus(pagamento.status);
-    const newStatus = _normalizeStatus(status);
-    const wasAprovado = oldStatus === 'aprovado';
-    const isAprovado = newStatus === 'aprovado';
-    const isRollback = ['cancelado', 'rejeitado', 'excluido', 'excluído', 'pendente'].includes(newStatus);
+  const oldStat = _norm(row[0].status);
+  const wasApp = oldStat === 'aprovado';
+  const isApp = newStat === 'aprovado';
+  const isRoll = ['cancelado', 'rejeitado', 'excluido', 'pendente'].includes(newStat);
 
-    const updateData = { status: newStatus };
-    if (newStatus === 'aprovado') {
-      updateData.data_pagamento = new Date();
+  if (newStat === 'aprovado') await prisma.$queryRaw`UPDATE pagamento SET status = ${newStat}, data_pagamento = NOW() WHERE id_pagamento = ${id}`;
+  else await prisma.$queryRaw`UPDATE pagamento SET status = ${newStat} WHERE id_pagamento = ${id}`;
+
+  const pids = await _linked(id);
+  if (pids.length) {
+    const ids = pids.join(',');
+    const peds = await prisma.$queryRaw`SELECT * FROM pedido WHERE id_pedido IN (${prisma.$queryRaw(ids)})`;
+    if (!wasApp && isApp) {
+      await prisma.$queryRaw`UPDATE pedido SET status = 'pago' WHERE id_pedido IN (${prisma.$queryRaw(ids)}) AND status IN ('confirmado', 'em_pagamento')`;
+      const sum = {}; for (const p of peds) { if (!_norm(p.status).match(/pago|cancelado/)) sum[_toN(p.id_cliente)] = (sum[_toN(p.id_cliente)] || 0) + parseFloat(p.total); }
+      for (const [c, v] of Object.entries(sum)) await _sub(parseInt(c), v);
     }
-    await prisma.pagamento.update({
-      where: { id_pagamento: parseInt(req.params.id) },
-      data: updateData
-    });
-
-    const pedidoIds = await _linkedPedidoIds(pagamento.id_pagamento);
-    if (pedidoIds.length > 0) {
-      const pedidosAtuais = await prisma.pedido.findMany({
-        where: { id_pedido: { in: pedidoIds } }
-      });
-
-      if (!wasAprovado && isAprovado) {
-        await prisma.pedido.updateMany({
-          where: { id_pedido: { in: pedidoIds }, status: { in: ['confirmado', 'em_pagamento'] } },
-          data: { status: 'pago' }
-        });
-
-        const consumoPorCliente = {};
-        for (const pedido of pedidosAtuais) {
-          const statusAtual = _normalizeStatus(pedido.status);
-          if (['pago', 'cancelado'].includes(statusAtual)) continue;
-          const clienteId = pedido.id_cliente;
-          consumoPorCliente[clienteId] = (consumoPorCliente[clienteId] || 0) + parseFloat(pedido.total);
-        }
-        for (const [clienteId, valorTotal] of Object.entries(consumoPorCliente)) {
-          await _subtractSaldoUtilizado(parseInt(clienteId), valorTotal);
-        }
-      }
-
-      if (isRollback) {
-        await prisma.pedido.updateMany({
-          where: { id_pedido: { in: pedidoIds }, status: { in: ['em_pagamento', 'pago'] } },
-          data: { status: 'confirmado' }
-        });
-
-        if (wasAprovado) {
-          const consumoPorCliente = {};
-          for (const pedido of pedidosAtuais) {
-            const statusAtual = _normalizeStatus(pedido.status);
-            if (statusAtual !== 'pago') continue;
-            const clienteId = pedido.id_cliente;
-            consumoPorCliente[clienteId] = (consumoPorCliente[clienteId] || 0) + parseFloat(pedido.total);
-          }
-          for (const [clienteId, valorTotal] of Object.entries(consumoPorCliente)) {
-            await _addSaldoUtilizado(parseInt(clienteId), valorTotal);
-          }
-        }
-      }
+    if (isRoll) {
+      await prisma.$queryRaw`UPDATE pedido SET status = 'confirmado' WHERE id_pedido IN (${prisma.$queryRaw(ids)}) AND status IN ('em_pagamento', 'pago')`;
+      if (wasApp) { const sum = {}; for (const p of peds) { if (_norm(p.status) === 'pago') sum[_toN(p.id_cliente)] = (sum[_toN(p.id_cliente)] || 0) + parseFloat(p.total); } for (const [c, v] of Object.entries(sum)) await _add(parseInt(c), v); }
     }
-
-    const result = await _getPagamentoWithPedidos(parseInt(req.params.id));
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: `Erro ao atualizar status: ${error.message}` });
   }
-};
-
-exports.delete = async (req, res) => {
-  try {
-    const pagamento = await prisma.pagamento.findUnique({
-      where: { id_pagamento: parseInt(req.params.id) }
-    });
-    if (!pagamento) return res.status(404).json({ error: 'Pagamento não encontrado' });
-
-    const oldStatus = _normalizeStatus(pagamento.status);
-    const pedidoIds = await _linkedPedidoIds(pagamento.id_pagamento);
-
-    if (pedidoIds.length > 0) {
-      const pedidosAtuais = await prisma.pedido.findMany({
-        where: { id_pedido: { in: pedidoIds } }
-      });
-
-      await prisma.pedido.updateMany({
-        where: { id_pedido: { in: pedidoIds }, status: { in: ['em_pagamento', 'pago'] } },
-        data: { status: 'confirmado' }
-      });
-
-      if (oldStatus === 'aprovado') {
-        const consumoPorCliente = {};
-        for (const pedido of pedidosAtuais) {
-          const statusAtual = _normalizeStatus(pedido.status);
-          if (statusAtual !== 'pago') continue;
-          const clienteId = pedido.id_cliente;
-          consumoPorCliente[clienteId] = (consumoPorCliente[clienteId] || 0) + parseFloat(pedido.total);
-        }
-        for (const [clienteId, valorTotal] of Object.entries(consumoPorCliente)) {
-          await _addSaldoUtilizado(parseInt(clienteId), valorTotal);
-        }
-      }
-    }
-
-    await prisma.pagamento.update({
-      where: { id_pagamento: parseInt(req.params.id) },
-      data: { status: 'excluido' }
-    });
-
-    res.json({ message: 'Pagamento deletado com sucesso' });
-  } catch (error) {
-    res.status(500).json({ error: `Erro ao deletar pagamento: ${error.message}` });
-  }
+  const rows = await prisma.$queryRaw`SELECT p.*, c.nome AS cliente_nome FROM pagamento p LEFT JOIN cliente c ON c.id_cliente = p.id_cliente WHERE p.id_pagamento = ${id} LIMIT 1`;
+  res.json(_map(rows[0]));
 };
