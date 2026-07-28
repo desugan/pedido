@@ -1,33 +1,13 @@
 {
   "name": "pedido-workspace",
   "version": "1.5.0",
-  "description": "Buteco do TI workspace",
-  "type": "module",
+  "private": true,
   "scripts": {
-    "dev": "concurrently -k -n FLASK,FRONTEND -c cyan,green \"./backend_flask/.venv/bin/python backend_flask/run.py\" \"npm --prefix frontend run dev\"",
-    "dev:backend": "./backend_flask/.venv/bin/python backend_flask/run.py",
-    "dev:frontend": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build",
-    "test": "./backend_flask/.venv/bin/python -m pytest backend_flask"
+    "dev": "node -e \"const{spawn}=require('child_process');const fs=require('fs');const b=spawn(fs.existsSync('api/.venv/bin/python')?'api/.venv/bin/python':'python',['api/run.py'],{stdio:'inherit'});const f=spawn('npm',['--prefix','web','run','dev'],{stdio:'inherit'});process.on('SIGINT',()=>{b.kill();f.kill();process.exit()})\"",
+    "dev:backend": "python api/run.py",
+    "dev:frontend": "npm --prefix web run dev",
+    "build": "npm --prefix web run build"
   },
-  "keywords": [
-    "pedidos",
-    "api",
-    "flask"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "dotenv": "^16.4.5"
-  },
-  "devDependencies": {
-    "@types/node": "^20.10.6",
-    "@typescript-eslint/eslint-plugin": "^6.17.0",
-    "@typescript-eslint/parser": "^6.17.0",
-    "concurrently": "^9.2.1",
-    "eslint": "^8.56.0",
-    "prettier": "^3.1.1",
-    "prettier-plugin-tailwindcss": "^0.5.11",
-    "typescript": "^5.3.3"
-  }
+  "keywords": ["pedidos", "api", "flask"],
+  "license": "MIT"
 }
