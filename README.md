@@ -1,145 +1,150 @@
-# Buteco do TI - Sistema de Pedidos
+# Pedidos — Sistema de Gestão
 
-**Versão:** 1.5.0
+Sistema de pedidos, pagamentos, clientes e controle financeiro.
 
-Sistema de gerenciamento de pedidos com controle de crédito, pagamento, estoque e relatórios detalhados.
+## Arquitetura
 
----
-
-## 🚀 Funcionalidades
-
-### 🛒 Pedidos & Vendas
-- **Criação Ágil:** Adicione itens do catálogo rapidamente.
-- **Estoque em Tempo Real:** Controle automático de entradas e saídas.
-- **Fluxo de Status:** Pendente, Confirmado, Em pagamento, Pago e Cancelado.
-- **Visualização Detalhada:** Modal com histórico e detalhes do pedido.
-
-### 💸 Pagamentos & PIX
-- **QR Code Automático:** Geração de QR Code PIX dinâmico.
-- **Gestão de Chaves:** Configuração flexível da chave PIX receptora.
-- **Conciliação:** Filtros por status (Abertos, Confirmados, Excluídos).
-- **Vínculo Direto:** Histórico de pedidos associados a cada pagamento.
-
-### 🔐 Segurança & Perfil
-- **Sessão Segura:** Logout automático após 2 minutos de inatividade.
-- **Troca de Senha:** Funcionalidade integrada para usuários.
-- **Autenticação Robusta:** JWT com criptografia assimétrica (RS256).
-- **Controle de Acesso:** Níveis diferenciados (Admin vs. Cliente).
-
-### 🛠️ Administração (Painel Admin)
-- **Clientes:** Cadastro, controle de limite de crédito e visualização de saldo.
-- **Produtos:** Gestão de catálogo, saldo em estoque e valorização.
-- **Fornecedores:** Cadastro com validação de CNPJ.
-- **Lançamentos:** Entrada manual de estoque com histórico auditável.
-- **Usuários:** Gestão completa de perfis e logs de acesso.
-
-### 📊 Relatórios & Monitoramento
-- **Extrato:** Histórico financeiro detalhado por cliente.
-- **Dashboard:** Visão geral de pedidos e faturamento.
-- **Health Check:** Monitoramento em tempo real do status da API e Banco de Dados.
-
----
-
-## 🛠️ Tecnologias
-
-| Componente | Tecnologia |
-|------------|------------|
-| **Backend (Principal)** | Flask (Python) + MySQL |
-| **Backend (Alternativo)** | Express (Node.js) + Prisma |
-| **Frontend** | React + Vite + TypeScript + Tailwind |
-| **Autenticação** | JWT Bearer Token (RS256) |
-| **Infra** | Docker & Docker Compose |
-
----
-
-## 📦 Instalação e Configuração
-
-### 1. Pré-requisitos
-- Node.js (v18+)
-- Python (v3.10+)
-- Docker & Docker Compose (opcional, mas recomendado)
-
-### 2. Configuração do Ambiente
-Copie o arquivo de exemplo e configure suas variáveis:
-```bash
-cp .env.example .env
 ```
-> **Nota:** Certifique-se de que os arquivos `jwt_private.pem` e `jwt_public.pem` existam na pasta `backend_flask/` para o funcionamento do JWT.
-
-### 3. Execução com Docker (Recomendado)
-Para subir todo o ambiente (Banco + App) em segundos:
-```bash
-docker-compose up -d
+pedido/
+├── api/          # Backend Flask (Python)
+│   ├── app/
+│   │   ├── routes/     → Validação e serializsação (Pydantic)
+│   │   ├── services/   → Orquestração e regras de negócio
+│   │   ├── queries/    → SQL puro (MySQL)
+│   │   ├── schemas/    → Schemas Pydantic v2
+│   │   ├── auth_guard.py
+│   │   ├── config.py
+│   │   ├── db.py       → PyMySQL connection pool
+│   │   ├── security.py → MD5 + JWT HS256
+│   │   └── __init__.py → create_app + migrar_schema()
+│   ├── run.py       → flask run (porta 5001)
+│   ├── requirements.txt
+│   └── tests/
+└── web/          # Frontend React (Vite + TypeScript + Tailwind)
+    └── src/
+        ├── pages/      → 13 páginas
+        ├── components/ → Componentes reutilizáveis
+        ├── hooks/      → Hook por recurso
+        ├── services/   → api.get/post wrappers
+        ├── mapper/     → snake_case → camelCase
+        ├── utils/      → PIX QR Code, formatação
+        ├── types/      → Interfaces TypeScript
+        └── styles/     → CSS
 ```
 
-### 4. Execução Manual (Desenvolvimento)
-Se preferir rodar localmente sem Docker:
+### Backend: Route → Service → Query
 
-**Instale as dependências:**
+```
+GET /api/pedidos
+  → routes/pedidos.py (valida)
+    → services/pedido_service.py (orquestra)
+      → queries/pedido_queries.py (SQL)
+```
+
+### Frontend: Component → Hook → Service
+
+```
+Pedidos.tsx
+  → hooks/usePedidos.ts
+    → services/pedidoService.ts
+      → api.get('/api/pedidos')
+```
+
+## Funcionalidades
+
+- **Pedidos**: CRUD, controle de estoque, status (pendente/confirmado/pago/cancelado)
+- **Pagamentos**: PIX (QR Code BR Code EMV®), múltiplos pedidos por pagamento, vínculo financeiro
+- **Clientes**: Cadastro, limite de crédito, saldo utilizado
+- **Produtos**: Cadastro, saldo, preço
+- **Fornecedores**: Cadastro de fornecedores
+- **Lançamentos**: Notas de entrada, ajuste de estoque
+- **Usuários**: Perfis (admin/usuário), autenticação MD5
+- **Relatórios**: Detalhamento por cliente com pedidos + pagamentos
+- **Autenticação**: JWT HS256, rate-limit por IP, 2 níveis de perfil
+
+## Stack
+
+| Layer | Tecnologia |
+|-------|-----------|
+| Backend | Python 3, Flask 3.1, PyMySQL, PyJWT, Pydantic v2 |
+| Frontend | React 18, TypeScript, Vite 5, Tailwind CSS |
+| Banco | MySQL 8 |
+| Auth | JWT (HS256), senhas MD5 |
+| Pagamento | PIX BR Code EMV® (CRC16-CCITT) |
+
+## Setup
+
+### Pré-requisitos
+- Python 3.11+
+- Node.js 20+
+- MySQL 8
+- `.env` em `api/`:
+
+```
+DATABASE_URL=mysql+pymysql://user:pass@host/db
+PORT=5001
+CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173,http://192.168.0.115:5171
+JWT_SECRET=<sua_chave_secreta>
+```
+
+### Backend
+
 ```bash
-# Dependências do Workspace e Frontend
+cd api
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python run.py
+# → http://localhost:5001
+```
+
+### Frontend
+
+```bash
+cd web
 npm install
-
-# Ambiente Virtual Python
-python -m venv backend_flask/.venv
-# Windows: backend_flask\.venv\Scripts\activate
-# Linux/Mac: source backend_flask/.venv/bin/activate
-pip install -r backend_flask/requirements.txt
+npm run dev
+# → http://localhost:5173
 ```
 
-**Inicie o Banco de Dados:**
-```bash
-docker run -d --name mysql-pedido -e MYSQL_ROOT_PASSWORD=senha -e MYSQL_DATABASE=pedido -p 3306:3306 mysql:8.0
-```
+### Ambos simultâneos (raiz)
 
-**Rode o projeto:**
 ```bash
-# Inicia Frontend + Backend Flask simultaneamente
 npm run dev
 ```
 
----
+## Rotas da API
 
-## 📂 Estrutura do Projeto
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| POST | `/api/auth/login` | Login |
+| PATCH | `/api/auth/senha` | Alterar senha |
+| GET | `/api/clientes` | Listar clientes |
+| GET | `/api/pedidos` | Listar pedidos |
+| GET | `/api/pedidos/para-pagamento` | Pedidos disponíveis para pagamento |
+| POST | `/api/pedidos` | Criar pedido |
+| PATCH | `/api/pedidos/<id>/status` | Atualizar status do pedido |
+| POST | `/api/pedidos/<id>/itens` | Adicionar item ao pedido |
+| DELETE | `/api/pedidos/<id>/itens/<item_id>` | Remover item do pedido |
+| DELETE | `/api/pedidos/<id>` | Deletar pedido |
+| GET | `/api/pagamentos` | Listar pagamentos |
+| GET | `/api/pagamentos/cliente/<id>` | Pagamentos de um cliente |
+| POST | `/api/pagamentos` | Criar pagamento |
+| PATCH | `/api/pagamentos/<id>/status` | Atualizar status do pagamento |
+| DELETE | `/api/pagamentos/<id>` | Deletar pagamento |
+| GET | `/api/produtos` | Listar produtos |
+| GET | `/api/fornecedores` | Listar fornecedores |
+| GET | `/api/lancamentos` | Listar lançamentos |
+| GET | `/api/relatorios/usuario` | Relatório detalhado por cliente |
+| GET | `/api/relatorios/pedidos` | Relatório de pedidos |
+| GET | `/api/relatorios/pagamentos` | Relatório de pagamentos |
+| GET | `/api/relatorios/clientes` | Relatório de clientes |
+| GET | `/api/relatorios/vendas` | Relatório de vendas |
+| GET | `/api/usuarios` | Listar usuários (admin) |
 
-```text
-.
-├── backend/            # Backend alternativo em Node.js (Express/Prisma)
-├── backend_flask/      # Backend principal em Flask
-│   ├── app/
-│   │   ├── routes/     # Endpoints da API
-│   │   └── db.py       # Conexão MySQL
-│   └── run.py          # Entry point Flask
-├── frontend/           # Aplicação React
-│   ├── src/
-│   │   ├── components/ # UI Components (Toast, Skeletons)
-│   │   ├── pages/      # Telas da aplicação
-│   │   └── services/   # Integração com API
-│   └── vite.config.ts
-├── docker-compose.yml  # Orquestração de containers
-└── README.md
+## Testes
+
+```bash
+cd api
+pytest
 ```
-
----
-
-## ✨ Novidades v1.5.0
-- **Monitoramento:** Indicadores visuais de conexão (API/DB) no cabeçalho.
-- **Segurança:** Sistema de expiração de sessão por inatividade.
-- **UI/UX:** Adição de "Skeleton Loaders" para carregamento suave.
-- **Toasts:** Notificações flutuantes aprimoradas para feedbacks de erro/sucesso.
-- **Performance:** Build otimizado e redução de bundle size.
-
----
-
-## ❓ Troubleshooting
-
-### Sessão expirando rápido demais?
-- O sistema possui um timer de 2 minutos de inatividade por segurança. Você pode ajustar esse valor no `App.tsx` se necessário.
-
-### Erro de Autenticação (JWT)
-- Verifique se as chaves RSA (.pem) foram geradas e estão na pasta correta.
-- O backend Flask espera chaves RS256 para assinatura dos tokens.
-
-### Problemas com o Banco de Dados
-- Se usar Docker Compose, verifique os logs: `docker-compose logs -f mysql`.
-- Certifique-se de que a `DATABASE_URL` no `.env` aponta para o host correto (`localhost` manual ou `mysql` no Docker).
